@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VibePM Mission Control</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Workspace navigation">
+        <div class="workspace">
+          <div class="workspace-mark">V</div>
+          <div>
+            <div class="workspace-name">VibePM</div>
+            <div class="workspace-meta">3 agents - Beta launch</div>
+          </div>
+        </div>
+
+        <nav class="nav-list" aria-label="Primary navigation">
+          <button class="nav-item active" type="button" data-view="Mission Control">
+            <span class="nav-icon">MC</span>
+            Mission Control
+          </button>
+          <button class="nav-item" type="button" data-view="Roadmap">
+            <span class="nav-icon">RM</span>
+            Roadmap
+          </button>
+          <button class="nav-item" type="button" data-view="Idea Inbox">
+            <span class="nav-icon">IN</span>
+            Idea Inbox
+          </button>
+          <button class="nav-item" type="button" data-view="Agent Runs">
+            <span class="nav-icon">AG</span>
+            Agent Runs
+          </button>
+          <button class="nav-item" type="button" data-view="User Signals">
+            <span class="nav-icon">SG</span>
+            User Signals
+          </button>
+          <button class="nav-item" type="button" data-view="Docs + PRDs">
+            <span class="nav-icon">PR</span>
+            Docs + PRDs
+          </button>
+          <button class="nav-item" type="button" data-view="Launches">
+            <span class="nav-icon">LN</span>
+            Launches
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="connection-dot"></div>
+          <span>GitHub, Discord, Codex connected</span>
+        </div>
+      </aside>
+
+      <main class="mission">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Product focus</p>
+            <h1>Mission Control</h1>
+            <p class="subtitle">Beta launch readiness - product execution board</p>
+          </div>
+          <div class="topbar-actions">
+            <label class="search">
+              <span>Q</span>
+              <input id="searchInput" type="search" placeholder="Search cards, owners, context" />
+            </label>
+            <select id="statusFilter" aria-label="Filter by status">
+              <option value="all">All states</option>
+              <option value="Signal">Signal</option>
+              <option value="Draft">Draft</option>
+              <option value="Spec">Spec</option>
+              <option value="Active">Active</option>
+              <option value="Review">Review</option>
+              <option value="Guard">Guard</option>
+              <option value="Ship">Ship</option>
+              <option value="Blocked">Blocked</option>
+            </select>
+            <button id="newCardButton" class="primary-button" type="button">New Card</button>
+          </div>
+        </header>
+
+        <section class="board" id="board" aria-label="Product execution Kanban board"></section>
+      </main>
+
+      <aside class="right-rail" aria-label="Product intelligence">
+        <section class="rail-section">
+          <div class="section-title">
+            <h2>Today Brief</h2>
+            <span class="risk-chip">Medium risk</span>
+          </div>
+          <ul class="brief-list">
+            <li><strong>Moved:</strong> PRD co-pilot gained acceptance checks.</li>
+            <li><strong>Blocked:</strong> Mobile nav still needs dogfood review.</li>
+            <li><strong>Decision:</strong> Pick launch scope for beta imports.</li>
+            <li><strong>Signal:</strong> Discord asks cluster around clipper flow.</li>
+          </ul>
+        </section>
+
+        <section class="rail-section">
+          <div class="section-title">
+            <h2>Signal Stack</h2>
+            <span>12 inputs</span>
+          </div>
+          <div class="signal-list" id="signalList"></div>
+        </section>
+
+        <section class="rail-section">
+          <div class="section-title">
+            <h2>Agent Swarm</h2>
+            <span>Live</span>
+          </div>
+          <div class="agent-list" id="agentList"></div>
+        </section>
+
+        <section class="rail-section">
+          <div class="section-title">
+            <h2>Founder Decisions</h2>
+            <span>3 open</span>
+          </div>
+          <div class="decision-list">
+            <button type="button">Scope tradeoff: launch gates or PRD depth?</button>
+            <button type="button">Sequence beta import before clipper?</button>
+            <button type="button">Accept medium telemetry risk for dogfood?</button>
+          </div>
+        </section>
+      </aside>
+    </div>
+
+    <dialog id="cardDialog">
+      <form method="dialog" class="dialog-card" id="cardForm">
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow">Capture</p>
+            <h2>Create product card</h2>
+          </div>
+          <button class="icon-button" value="cancel" type="submit" aria-label="Close">x</button>
+        </div>
+
+        <label>
+          Title
+          <input id="cardTitle" name="title" required placeholder="New launch experiment" />
+        </label>
+        <label>
+          Outcome
+          <textarea id="cardOutcome" name="outcome" rows="3" required placeholder="What product outcome should this produce?"></textarea>
+        </label>
+        <div class="form-grid">
+          <label>
+            Column
+            <select id="cardColumn" name="column">
+              <option>Idea Intake</option>
+              <option>Shape</option>
+              <option>Build Watch</option>
+              <option>Launch Ready</option>
+            </select>
+          </label>
+          <label>
+            Status
+            <select id="cardStatus" name="status">
+              <option>Signal</option>
+              <option>Draft</option>
+              <option>Spec</option>
+              <option>Active</option>
+              <option>Review</option>
+              <option>Guard</option>
+              <option>Ship</option>
+              <option>Blocked</option>
+            </select>
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button class="secondary-button" value="cancel" type="submit">Cancel</button>
+          <button class="primary-button" value="default" type="submit">Create Card</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
