@@ -148,6 +148,7 @@ async function inspectProject(dir) {
     git(dir, ["status", "--short"]),
     git(dir, ["log", "-1", "--pretty=%h %s"]),
   ]);
+  const github = await inspectGithub(remote, branch);
 
   const dirtyFiles = status.split("\n").filter(Boolean);
   const todoFindings = await findTodos(dir);
@@ -164,6 +165,10 @@ async function inspectProject(dir) {
     linkedCardId: "",
     createdAt: new Date().toISOString(),
   });
+
+  for (const item of github.activity) {
+    activity.push({ ...item, projectId: id });
+  }
 
   if (dirtyFiles.length) {
     cards.push(makeGeneratedCard({
@@ -235,12 +240,66 @@ async function inspectProject(dir) {
     }));
   }
 
+  for (const issue of github.issues.slice(0, 5)) {
+    cards.push(makeGeneratedCard({
+      id: `generated-${id}-gh-issue-${issue.number}`,
+      column: "Idea Intake",
+      title: `${name}: GitHub issue #${issue.number}`,
+      outcome: issue.title,
+      owner: "Founder",
+      status: "Signal",
+      risk: issue.labels?.some((label) => /bug|block|urgent/i.test(label)) ? 7 : 4,
+      context: ["GitHub Issue", issue.url],
+      gate: "Triage GitHub issue",
+      signals: [issue.body || issue.title],
+    }));
+  }
+
+  for (const pr of github.pullRequests.slice(0, 5)) {
+    cards.push(makeGeneratedCard({
+      id: `generated-${id}-gh-pr-${pr.number}`,
+      column: "Build Watch",
+      title: `${name}: PR #${pr.number}`,
+      outcome: pr.title,
+      owner: pr.author || "GitHub",
+      status: pr.isDraft ? "Draft" : "Review",
+      risk: pr.reviewDecision === "CHANGES_REQUESTED" ? 8 : 5,
+      context: ["GitHub PR", pr.url],
+      gate: pr.reviewDecision === "APPROVED" ? "Approved PR" : "Review GitHub PR",
+      agentRuns: [`GitHub PR state: ${pr.state}. Review: ${pr.reviewDecision || "Pending"}.`],
+      checks: [{ id: `pr-${slug(name)}-${pr.number}`, label: `Review PR #${pr.number}`, done: pr.reviewDecision === "APPROVED" }],
+    }));
+  }
+
+  if (github.checks.length) {
+    const failing = github.checks.filter((check) => check.conclusion && !["success", "skipped", "neutral"].includes(check.conclusion));
+    if (failing.length) {
+      cards.push(makeGeneratedCard({
+        id: `generated-${id}-gh-checks`,
+        column: "Build Watch",
+        title: `${name}: failing GitHub checks`,
+        outcome: `${failing.length} GitHub check runs need attention on ${branch || "current branch"}.`,
+        owner: "Codex",
+        status: "Blocked",
+        risk: 9,
+        context: ["GitHub Actions", remote],
+        gate: "Fix failing checks",
+        checks: failing.slice(0, 6).map((check, index) => ({
+          id: `check-${slug(name)}-${index}`,
+          label: `${check.name}: ${check.conclusion}`,
+          done: false,
+        })),
+      }));
+    }
+  }
+
   return {
     id,
     name,
     path: dir,
     repo: remote,
     branch,
+    github,
     productGoal: playbook.productGoal,
     currentFocus: playbook.currentFocus,
     hasPlaybook: playbook.hasPlaybook,
@@ -312,6 +371,89 @@ async function readProjectPlaybook(dir) {
     currentFocus: extractSection(text, "Current Focus"),
     raw: text.slice(0, 4000),
   };
+}
+
+async function inspectGithub(remote, branch) {
+  const repo = parseGithubRepo(remote);
+  if (!repo) {
+    return { repo: "", issues: [], pullRequests: [], checks: [], activity: [] };
+  }
+
+  const [issues, pullRequests, checks] = await Promise.all([
+    gh(["issue", "list", "--repo", repo, "--state", "open", "--limit", "10", "--json", "number,title,url,body,labels"]),
+    gh(["pr", "list", "--repo", repo, "--state", "open", "--limit", "10", "--json", "number,title,url,state,isDraft,reviewDecision,author"]),
+    branch
+      ? gh(["run", "list", "--repo", repo, "--branch", branch, "--limit", "10", "--json", "name,conclusion,status,url,headBranch"])
+      : Promise.resolve([]),
+  ]);
+
+  const normalizedIssues = issues.map((issue) => ({
+    number: issue.number,
+    title: issue.title,
+    url: issue.url,
+    body: issue.body,
+    labels: (issue.labels || []).map((label) => label.name),
+  }));
+
+  const normalizedPrs = pullRequests.map((pr) => ({
+    number: pr.number,
+    title: pr.title,
+    url: pr.url,
+    state: pr.state,
+    isDraft: pr.isDraft,
+    reviewDecision: pr.reviewDecision,
+    author: pr.author?.login || "",
+  }));
+
+  const normalizedChecks = checks.map((check) => ({
+    name: check.name,
+    conclusion: check.conclusion,
+    status: check.status,
+    url: check.url,
+    headBranch: check.headBranch,
+  }));
+
+  const activity = [
+    {
+      id: `activity-github-${slug(repo)}-summary`,
+      source: "GitHub",
+      status: "Observed",
+      title: `${repo}: GitHub context synced`,
+      detail: `${normalizedIssues.length} open issues, ${normalizedPrs.length} open PRs, ${normalizedChecks.length} recent checks.`,
+      linkedCardId: "",
+      createdAt: new Date().toISOString(),
+    },
+  ];
+
+  return {
+    repo,
+    issues: normalizedIssues,
+    pullRequests: normalizedPrs,
+    checks: normalizedChecks,
+    activity,
+  };
+}
+
+function parseGithubRepo(remote) {
+  if (!remote) return "";
+  const httpsMatch = remote.match(/github\.com[:/](.+?\/.+?)(?:\.git)?$/i);
+  return httpsMatch?.[1] || "";
+}
+
+async function gh(args) {
+  return new Promise((resolve) => {
+    execFile("gh", args, { timeout: 10000 }, (error, stdout) => {
+      if (error) {
+        resolve([]);
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdout || "[]"));
+      } catch {
+        resolve([]);
+      }
+    });
+  });
 }
 
 function extractSection(text, heading) {

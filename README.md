@@ -30,6 +30,7 @@ A dark-mode static prototype for the VibePM product-management mission control U
 - Project scanner that reads local Git repos, branches, remotes, dirty files, latest commits, TODO/FIXME comments, and launch-doc gaps
 - `Sync Projects` action for generating real cards/activity from current projects
 - Optional per-project `VIBEPM.md` playbook so generated cards reflect product intent instead of raw Git noise
+- GitHub enrichment through authenticated `gh`: open issues, open PRs, review state, recent branch checks, and generated cards for GitHub work
 
 ## Run locally
 
@@ -56,3 +57,7 @@ Or use the `Sync Projects` button in the app.
 ## Teach VibePM About A Project
 
 Copy `docs/VIBEPM_TEMPLATE.md` into a project as `VIBEPM.md`, then fill in product goal, current focus, useful commands, launch checklist, and what Codex should ignore. The scanner reads this file and uses it to generate more useful cards.
+
+## GitHub Connection
+
+The local scanner uses each repo's `origin` remote plus your authenticated `gh` CLI session. Run `gh auth status` if GitHub data does not appear after `Sync Projects`.

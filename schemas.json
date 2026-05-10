@@ -141,6 +141,7 @@
           "items": { "type": "string" }
         },
         "latestCommit": { "type": "string" },
+        "github": { "type": "object" },
         "linkedCards": {
           "type": "array",
           "items": { "type": "string" }

@@ -827,12 +827,16 @@ function runItem(card, run) {
 }
 
 function projectItem(project) {
+  const githubSummary = project.github?.repo
+    ? `${project.github.repo}: ${project.github.issues?.length || 0} issues, ${project.github.pullRequests?.length || 0} PRs, ${project.github.checks?.length || 0} checks`
+    : "No GitHub repo metadata";
   return `
     <div class="project-item">
       <strong>${escapeHtml(project.name)}</strong>
       <span>${escapeHtml(project.status)} - ${escapeHtml(project.path)}</span>
       <span>${project.hasPlaybook ? "VIBEPM.md connected" : "No VIBEPM.md playbook yet"}</span>
       ${project.currentFocus ? `<small>Focus: ${escapeHtml(project.currentFocus)}</small>` : ""}
+      <small>${escapeHtml(githubSummary)}</small>
       <small>${escapeHtml(project.repo || "No repo connected")}</small>
     </div>
   `;
