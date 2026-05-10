@@ -5,3 +5,5 @@ dist/
 build/
 .env
 .env.*
+vibepm-export-*.json
+vibepm-codex-snapshot*.json

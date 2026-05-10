@@ -7,12 +7,24 @@
   "properties": {
     "version": {
       "type": "integer",
-      "const": 2
+      "const": 3
     },
     "cards": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/card"
+      }
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/project"
+      }
+    },
+    "activity": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/activity"
       }
     }
   },
@@ -33,7 +45,9 @@
         "context",
         "gate",
         "prd",
+        "prdFields",
         "prompt",
+        "agentSpec",
         "signals",
         "agentRuns",
         "decisions",
@@ -63,7 +77,9 @@
         },
         "gate": { "type": "string" },
         "prd": { "type": "string" },
+        "prdFields": { "type": "object" },
         "prompt": { "type": "string" },
+        "agentSpec": { "type": "object" },
         "signals": {
           "type": "array",
           "items": { "type": "string" }
@@ -95,6 +111,36 @@
         "id": { "type": "string" },
         "label": { "type": "string" },
         "done": { "type": "boolean" }
+      }
+    },
+    "project": {
+      "type": "object",
+      "required": ["id", "name", "path", "status", "updatedAt"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "path": { "type": "string" },
+        "repo": { "type": "string" },
+        "status": { "type": "string" },
+        "linkedCards": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "activity": {
+      "type": "object",
+      "required": ["id", "projectId", "source", "status", "title", "detail", "linkedCardId", "createdAt"],
+      "properties": {
+        "id": { "type": "string" },
+        "projectId": { "type": "string" },
+        "source": { "type": "string" },
+        "status": { "type": "string" },
+        "title": { "type": "string" },
+        "detail": { "type": "string" },
+        "linkedCardId": { "type": "string" },
+        "createdAt": { "type": "string" }
       }
     }
   }

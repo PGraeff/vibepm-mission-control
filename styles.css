@@ -411,14 +411,73 @@ select {
 }
 
 .rule-list span,
+.rule-button,
 .source-list span,
-.stack-row {
+.stack-row,
+.project-item {
   padding: 10px;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   background: #0c131c;
   color: #c2ccda;
   font-size: 12px;
+}
+
+.rule-button {
+  width: 100%;
+  text-align: left;
+}
+
+.quick-form,
+.inline-editor,
+.guided-grid,
+.project-list {
+  display: grid;
+  gap: 10px;
+}
+
+.quick-form {
+  margin-bottom: 14px;
+}
+
+.inline-list {
+  display: grid;
+  gap: 8px;
+}
+
+.inline-item,
+.inline-add {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.inline-item {
+  padding: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #0c131c;
+}
+
+.inline-item button,
+.check-item button {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #101822;
+  color: var(--muted);
+}
+
+.project-item {
+  display: grid;
+  gap: 4px;
+}
+
+.project-item span,
+.project-item small {
+  color: var(--muted);
 }
 
 .run-item,
@@ -942,7 +1001,7 @@ textarea {
 
 .check-item {
   display: grid;
-  grid-template-columns: 18px 1fr;
+  grid-template-columns: 18px 1fr auto;
   align-items: center;
   gap: 9px;
   padding: 10px;
@@ -953,6 +1012,10 @@ textarea {
 }
 
 .check-item input {
+  min-width: 0;
+}
+
+.check-item input[type="checkbox"] {
   width: 16px;
   height: 16px;
 }

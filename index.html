@@ -82,6 +82,9 @@
               <option value="priority">Priority score</option>
               <option value="risk">Highest risk</option>
             </select>
+            <button id="exportButton" class="secondary-button" type="button">Export</button>
+            <button id="importButton" class="secondary-button" type="button">Import</button>
+            <input id="importInput" type="file" accept="application/json" hidden />
             <button id="newCardButton" class="primary-button" type="button">New Card</button>
           </div>
         </header>
@@ -234,12 +237,8 @@
           </label>
         </div>
 
-        <label>
-          Linked context
-          <input id="detailContext" placeholder="PRD, Prompt, GitHub PR" />
-        </label>
-
         <div class="detail-tabs" role="tablist" aria-label="Card detail sections">
+          <button class="detail-tab" type="button" data-section="context">Context</button>
           <button class="detail-tab active" type="button" data-section="prd">PRD</button>
           <button class="detail-tab" type="button" data-section="prompt">Prompt</button>
           <button class="detail-tab" type="button" data-section="signals">Signals</button>
@@ -248,38 +247,65 @@
           <button class="detail-tab" type="button" data-section="decisions">Decisions</button>
         </div>
 
+        <section class="detail-section" data-section-panel="context">
+          <div class="inline-editor">
+            <div class="inline-list" id="detailContextList"></div>
+            <div class="inline-add">
+              <input id="newContextInput" placeholder="PRD, Prompt, GitHub PR, Session replay" />
+              <button class="secondary-button" type="button" data-add-list-item="context">Add</button>
+            </div>
+          </div>
+        </section>
         <section class="detail-section active" data-section-panel="prd">
-          <label>
-            PRD notes
-            <textarea id="detailPrd" rows="7"></textarea>
-          </label>
+          <div class="guided-grid">
+            <label>Problem statement<textarea id="prdProblem" rows="3"></textarea></label>
+            <label>Target user<textarea id="prdTargetUser" rows="2"></textarea></label>
+            <label>Success metric<input id="prdSuccessMetric" /></label>
+            <label>Launch gate<input id="prdLaunchGate" /></label>
+            <label>Assumptions<textarea id="prdAssumptions" rows="4"></textarea></label>
+            <label>Acceptance criteria<textarea id="prdAcceptance" rows="4"></textarea></label>
+            <label>Risks<textarea id="prdRisks" rows="3"></textarea></label>
+            <label>Generated PRD<textarea id="detailPrd" rows="8"></textarea></label>
+          </div>
         </section>
         <section class="detail-section" data-section-panel="prompt">
-          <label>
-            Agent prompt
-            <textarea id="detailPrompt" rows="7"></textarea>
-          </label>
+          <div class="guided-grid">
+            <label>Agent role<input id="agentRole" placeholder="Codex implementation agent" /></label>
+            <label>Context package<textarea id="agentContext" rows="4"></textarea></label>
+            <label>Done checks<textarea id="agentDoneChecks" rows="4"></textarea></label>
+            <label>Verification steps<textarea id="agentVerification" rows="4"></textarea></label>
+            <label>Generated prompt<textarea id="detailPrompt" rows="8"></textarea></label>
+          </div>
         </section>
         <section class="detail-section" data-section-panel="signals">
-          <label>
-            User signals
-            <textarea id="detailSignals" rows="7" placeholder="One signal per line"></textarea>
-          </label>
+          <div class="inline-editor">
+            <div class="inline-list" id="detailSignalsList"></div>
+            <div class="inline-add">
+              <input id="newSignalInput" placeholder="User quote, support snippet, replay note" />
+              <button class="secondary-button" type="button" data-add-list-item="signals">Add</button>
+            </div>
+          </div>
         </section>
         <section class="detail-section" data-section-panel="agents">
-          <label>
-            Agent runs
-            <textarea id="detailAgentRuns" rows="7" placeholder="One agent update per line"></textarea>
-          </label>
+          <div class="inline-editor">
+            <div class="inline-list" id="detailAgentRunsList"></div>
+            <div class="inline-add">
+              <input id="newAgentRunInput" placeholder="Codex queued, implementing, blocked, complete" />
+              <button class="secondary-button" type="button" data-add-list-item="agentRuns">Add</button>
+            </div>
+          </div>
         </section>
         <section class="detail-section" data-section-panel="checks">
           <div class="check-list" id="detailChecks"></div>
         </section>
         <section class="detail-section" data-section-panel="decisions">
-          <label>
-            Founder decisions
-            <textarea id="detailDecisions" rows="7" placeholder="One decision per line"></textarea>
-          </label>
+          <div class="inline-editor">
+            <div class="inline-list" id="detailDecisionsList"></div>
+            <div class="inline-add">
+              <input id="newDecisionInput" placeholder="Scope tradeoff, launch sequencing, risk acceptance" />
+              <button class="secondary-button" type="button" data-add-list-item="decisions">Add</button>
+            </div>
+          </div>
         </section>
 
         <div class="dialog-actions">

@@ -1,9 +1,37 @@
-const STORAGE_KEY = "vibepm.mission-control.v2";
+const STORAGE_KEY = "vibepm.mission-control.v3";
 const columns = ["Idea Intake", "Shape", "Build Watch", "Launch Ready"];
 const statuses = ["Signal", "Draft", "Spec", "Active", "Review", "Guard", "Ship", "Blocked"];
 
 const seedState = {
-  version: 2,
+  version: 3,
+  backend: {
+    mode: "localStorage",
+    syncStatus: "Local only",
+    lastExportedAt: "",
+  },
+  projects: [
+    {
+      id: "project-vibepm",
+      name: "VibePM Mission Control",
+      path: "C:\\Users\\pedro\\OneDrive\\Documentos\\New project 4",
+      repo: "https://github.com/PGraeff/vibepm-mission-control",
+      status: "Active",
+      linkedCards: ["release-checklist", "prd-copilot"],
+      updatedAt: new Date().toISOString(),
+    },
+  ],
+  activity: [
+    {
+      id: "activity-bootstrap",
+      projectId: "project-vibepm",
+      source: "Codex",
+      status: "Complete",
+      title: "Created and pushed VibePM prototype",
+      detail: "Static app, routed pages, persisted workflows, and GitHub repo are connected.",
+      linkedCardId: "release-checklist",
+      createdAt: new Date().toISOString(),
+    },
+  ],
   cards: [
     createSeedCard({
       id: "voice-opportunity",
@@ -204,15 +232,36 @@ const topbarActions = document.querySelector("#topbarActions");
 const searchInput = document.querySelector("#searchInput");
 const statusFilter = document.querySelector("#statusFilter");
 const sortMode = document.querySelector("#sortMode");
+const exportButton = document.querySelector("#exportButton");
+const importButton = document.querySelector("#importButton");
+const importInput = document.querySelector("#importInput");
 const dialog = document.querySelector("#cardDialog");
 const cardForm = document.querySelector("#cardForm");
 const detailDrawer = document.querySelector("#detailDrawer");
 const detailForm = document.querySelector("#detailForm");
 
 function createSeedCard(card) {
+  const prdFields = {
+    problem: card.outcome || "",
+    targetUser: "Solo builders and small teams using AI coding agents.",
+    successMetric: "",
+    assumptions: [],
+    acceptance: [],
+    risks: [],
+    launchGate: card.gate || "Needs review",
+    ...(card.prdFields || {}),
+  };
+
   return {
     prd: "",
+    prdFields,
     prompt: "",
+    agentSpec: {
+      role: card.owner ? `${card.owner} implementation agent` : "Codex implementation agent",
+      context: "",
+      doneChecks: [],
+      verification: [],
+    },
     signals: [],
     agentRuns: [],
     decisions: [],
@@ -229,17 +278,58 @@ function createSeedCard(card) {
 function loadState() {
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (stored?.version === 2 && Array.isArray(stored.cards)) {
-      return stored;
+    if (stored?.version === 3 && Array.isArray(stored.cards)) {
+      return normalizeState(stored);
+    }
+
+    const legacy = JSON.parse(localStorage.getItem("vibepm.mission-control.v2"));
+    if (legacy?.version === 2 && Array.isArray(legacy.cards)) {
+      return normalizeState({
+        ...structuredClone(seedState),
+        cards: legacy.cards,
+      });
     }
   } catch {
     localStorage.removeItem(STORAGE_KEY);
   }
-  return structuredClone(seedState);
+  return normalizeState(structuredClone(seedState));
 }
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function normalizeState(rawState) {
+  const next = {
+    ...structuredClone(seedState),
+    ...rawState,
+    version: 3,
+  };
+  next.cards = (rawState.cards || []).map(normalizeCard);
+  next.projects = rawState.projects || seedState.projects;
+  next.activity = rawState.activity || seedState.activity;
+  next.backend = rawState.backend || seedState.backend;
+  return next;
+}
+
+function normalizeCard(card) {
+  const normalized = createSeedCard(card);
+  normalized.prd = card.prd || normalized.prd;
+  normalized.prdFields = {
+    ...normalized.prdFields,
+    ...(card.prdFields || {}),
+    launchGate: card.prdFields?.launchGate || card.gate || normalized.prdFields.launchGate,
+  };
+  normalized.agentSpec = {
+    ...normalized.agentSpec,
+    ...(card.agentSpec || {}),
+  };
+  normalized.context = card.context || [];
+  normalized.signals = card.signals || [];
+  normalized.agentRuns = card.agentRuns || [];
+  normalized.decisions = card.decisions || [];
+  normalized.checks = card.checks || normalized.checks;
+  return normalized;
 }
 
 function renderApp() {
@@ -356,8 +446,19 @@ function renderIdeaInbox() {
       </section>
       <section class="page-panel">
         <div class="section-title">
+          <h2>Quick Capture</h2>
+          <span>Local</span>
+        </div>
+        <form class="quick-form" id="quickIdeaForm">
+          <label>Title<input id="quickIdeaTitle" required placeholder="Raw user ask or founder thought" /></label>
+          <label>Signal<textarea id="quickIdeaSignal" rows="4" required></textarea></label>
+          <button class="primary-button" type="submit">Capture Idea</button>
+        </form>
+      </section>
+      <section class="page-panel wide-panel">
+        <div class="section-title">
           <h2>Triage Rules</h2>
-          <span>Mock</span>
+          <span>Local</span>
         </div>
         <div class="rule-list">
           <span>High signal plus high confidence moves to Shape.</span>
@@ -368,6 +469,7 @@ function renderIdeaInbox() {
     </div>
   `;
   wireOpenRows();
+  document.querySelector("#quickIdeaForm").addEventListener("submit", captureQuickIdea);
 }
 
 function renderAgentRuns() {
@@ -392,16 +494,40 @@ function renderAgentRuns() {
       </section>
       <section class="page-panel">
         <div class="section-title">
-          <h2>State Mix</h2>
-          <span>Live</span>
+          <h2>Codex Project Monitor</h2>
+          <span>${state.backend.syncStatus}</span>
         </div>
-        <div class="stack-list">
-          ${statuses.map((status) => statusSummary(status)).join("")}
+        <div class="project-list">
+          ${state.projects.map(projectItem).join("")}
+        </div>
+        <form class="quick-form" id="activityForm">
+          <label>Activity title<input id="activityTitle" placeholder="Codex is editing launch page" required /></label>
+          <label>Status
+            <select id="activityStatus">
+              <option>Queued</option>
+              <option>Active</option>
+              <option>Blocked</option>
+              <option>Review</option>
+              <option>Complete</option>
+            </select>
+          </label>
+          <label>Detail<textarea id="activityDetail" rows="3"></textarea></label>
+          <button class="primary-button" type="submit">Add Activity</button>
+        </form>
+      </section>
+      <section class="page-panel wide-panel">
+        <div class="section-title">
+          <h2>Local Activity Timeline</h2>
+          <span>${state.activity.length} events</span>
+        </div>
+        <div class="run-list">
+          ${state.activity.map(activityItem).join("")}
         </div>
       </section>
     </div>
   `;
   wireOpenRows();
+  document.querySelector("#activityForm").addEventListener("submit", addManualActivity);
 }
 
 function renderUserSignals() {
@@ -445,6 +571,10 @@ function renderLaunches() {
   const launchCards = filteredCards()
     .filter((card) => card.column === "Launch Ready" || card.status === "Guard" || card.gate)
     .sort((a, b) => b.risk - a.risk);
+  const blockers = launchCards.filter(isBlocked);
+  const incompleteChecks = launchCards.flatMap((card) =>
+    card.checks.filter((check) => !check.done).map((check) => ({ card, check })),
+  );
   viewRoot.className = "view-root page-scroll";
   viewRoot.innerHTML = `
     <div class="metric-strip">
@@ -453,8 +583,34 @@ function renderLaunches() {
       ${summaryMetric("Blocked", launchCards.filter(isBlocked).length)}
       ${summaryMetric("Checks", launchCards.reduce((sum, card) => sum + card.checks.length, 0))}
     </div>
-    <div class="launch-list">
-      ${launchCards.map((card) => launchItem(card)).join("")}
+    <div class="page-grid">
+      <section class="page-panel wide-panel">
+        <div class="section-title">
+          <h2>Launch Checklist Dashboard</h2>
+          <span>${incompleteChecks.length} open checks</span>
+        </div>
+        <div class="launch-list">
+          ${launchCards.map((card) => launchItem(card)).join("")}
+        </div>
+      </section>
+      <section class="page-panel">
+        <div class="section-title">
+          <h2>Blocking Gates</h2>
+          <span>${blockers.length}</span>
+        </div>
+        <div class="stack-list">
+          ${blockers.map((card) => `<button class="rule-button" type="button" data-open-card="${escapeHtml(card.id)}">${escapeHtml(card.title)} - ${escapeHtml(card.gate)}</button>`).join("") || emptyState("No blocking gates.")}
+        </div>
+      </section>
+      <section class="page-panel wide-panel">
+        <div class="section-title">
+          <h2>Incomplete Launch Checks</h2>
+          <span>${incompleteChecks.length}</span>
+        </div>
+        <div class="signal-table">
+          ${incompleteChecks.map(({ card, check }) => `<button class="signal-row" type="button" data-open-card="${escapeHtml(card.id)}"><span>${escapeHtml(check.label)}</span><small>${escapeHtml(card.title)}</small><strong>Risk ${card.risk}</strong></button>`).join("") || emptyState("All launch checks are complete.")}
+        </div>
+      </section>
     </div>
   `;
   wireOpenRows();
@@ -620,6 +776,30 @@ function runItem(card, run) {
   `;
 }
 
+function projectItem(project) {
+  return `
+    <div class="project-item">
+      <strong>${escapeHtml(project.name)}</strong>
+      <span>${escapeHtml(project.status)} - ${escapeHtml(project.path)}</span>
+      <small>${escapeHtml(project.repo || "No repo connected")}</small>
+    </div>
+  `;
+}
+
+function activityItem(activity) {
+  const linked = activity.linkedCardId ? findCard(activity.linkedCardId) : null;
+  return `
+    <button class="run-item" type="button" ${linked ? `data-open-card="${escapeHtml(linked.id)}"` : ""}>
+      <div class="agent-head">
+        <strong>${escapeHtml(activity.source)} - ${escapeHtml(activity.status)}</strong>
+        <span class="agent-state">${new Date(activity.createdAt).toLocaleDateString()}</span>
+      </div>
+      <p>${escapeHtml(activity.title)}</p>
+      <small>${escapeHtml(activity.detail || "No detail recorded.")}</small>
+    </button>
+  `;
+}
+
 function statusSummary(status) {
   const count = state.cards.filter((card) => card.status === status).length;
   return `
@@ -691,6 +871,7 @@ function renderRail() {
   const agentRuns = cards
     .flatMap((card) => card.agentRuns.map((run) => ({ card, run })))
     .slice(0, 5);
+  const activityRuns = state.activity.slice(0, 3);
   const decisions = cards
     .flatMap((card) => card.decisions.map((decision) => ({ card, decision })))
     .slice(0, 5);
@@ -710,8 +891,12 @@ function renderRail() {
     ? signals.map(({ card, signal }, index) => railItem(`${index + 1}. ${card.title}`, signal)).join("")
     : railItem("No signals", "Open a card and add one signal per line.");
 
-  document.querySelector("#agentList").innerHTML = agentRuns.length
-    ? agentRuns.map(({ card, run }) => agentItem(card.owner, run, card.status, card.title)).join("")
+  document.querySelector("#agentList").innerHTML = activityRuns.length
+    ? activityRuns
+        .map((activity) => agentItem(activity.source, activity.title, activity.status, findCard(activity.linkedCardId)?.title || "Project activity"))
+        .join("")
+    : agentRuns.length
+      ? agentRuns.map(({ card, run }) => agentItem(card.owner, run, card.status, card.title)).join("")
     : agentItem("No agent", "Create an agent mission from a card.", "Idle", "None");
 
   document.querySelector("#decisionCount").textContent = `${decisions.length} open`;
@@ -824,15 +1009,26 @@ function populateDetail(cardId) {
   document.querySelector("#detailImpact").value = card.impact;
   document.querySelector("#detailConfidence").value = card.confidence;
   document.querySelector("#detailRisk").value = card.risk;
-  document.querySelector("#detailContext").value = card.context.join(", ");
+  document.querySelector("#prdProblem").value = card.prdFields.problem;
+  document.querySelector("#prdTargetUser").value = card.prdFields.targetUser;
+  document.querySelector("#prdSuccessMetric").value = card.prdFields.successMetric;
+  document.querySelector("#prdLaunchGate").value = card.prdFields.launchGate;
+  document.querySelector("#prdAssumptions").value = card.prdFields.assumptions.join("\n");
+  document.querySelector("#prdAcceptance").value = card.prdFields.acceptance.join("\n");
+  document.querySelector("#prdRisks").value = card.prdFields.risks.join("\n");
+  document.querySelector("#agentRole").value = card.agentSpec.role;
+  document.querySelector("#agentContext").value = card.agentSpec.context;
+  document.querySelector("#agentDoneChecks").value = card.agentSpec.doneChecks.join("\n");
+  document.querySelector("#agentVerification").value = card.agentSpec.verification.join("\n");
   document.querySelector("#detailPrd").value = card.prd;
   document.querySelector("#detailPrompt").value = card.prompt;
-  document.querySelector("#detailSignals").value = card.signals.join("\n");
-  document.querySelector("#detailAgentRuns").value = card.agentRuns.join("\n");
-  document.querySelector("#detailDecisions").value = card.decisions.join("\n");
 
   fillSelect("#detailColumn", columns, card.column);
   fillSelect("#detailStatus", statuses, card.status);
+  renderInlineList("context", card.context);
+  renderInlineList("signals", card.signals);
+  renderInlineList("agentRuns", card.agentRuns);
+  renderInlineList("decisions", card.decisions);
   renderDetailChecks(card);
 }
 
@@ -842,11 +1038,42 @@ function renderDetailChecks(card) {
       (check) => `
         <label class="check-item">
           <input type="checkbox" data-check-id="${escapeHtml(check.id)}" ${check.done ? "checked" : ""} />
-          <span>${escapeHtml(check.label)}</span>
+          <input data-check-label="${escapeHtml(check.id)}" value="${escapeHtml(check.label)}" />
+          <button type="button" data-remove-check="${escapeHtml(check.id)}">Remove</button>
         </label>
       `,
     )
-    .join("");
+    .join("") +
+    `
+      <div class="inline-add">
+        <input id="newCheckInput" placeholder="Add launch check" />
+        <button class="secondary-button" type="button" id="addCheckButton">Add</button>
+      </div>
+    `;
+  document.querySelectorAll("[data-remove-check]").forEach((button) => {
+    button.addEventListener("click", () => removeCheck(button.dataset.removeCheck));
+  });
+  document.querySelector("#addCheckButton").addEventListener("click", addCheck);
+}
+
+function renderInlineList(type, items) {
+  const target = {
+    context: "#detailContextList",
+    signals: "#detailSignalsList",
+    agentRuns: "#detailAgentRunsList",
+    decisions: "#detailDecisionsList",
+  }[type];
+  document.querySelector(target).innerHTML =
+    items
+      .map(
+        (item, index) => `
+          <div class="inline-item">
+            <input value="${escapeHtml(item)}" data-inline-type="${type}" data-inline-index="${index}" />
+            <button type="button" data-remove-list-item="${type}" data-remove-index="${index}">Remove</button>
+          </div>
+        `,
+      )
+      .join("") || `<div class="empty-state">No ${escapeHtml(type)} yet.</div>`;
 }
 
 function updateCardFromDetail() {
@@ -862,17 +1089,166 @@ function updateCardFromDetail() {
   card.impact = clampScore(document.querySelector("#detailImpact").value);
   card.confidence = clampScore(document.querySelector("#detailConfidence").value);
   card.risk = clampScore(document.querySelector("#detailRisk").value);
-  card.context = parseLinesOrComma(document.querySelector("#detailContext").value);
+  card.context = collectInlineValues("context");
+  card.prdFields = {
+    problem: document.querySelector("#prdProblem").value.trim(),
+    targetUser: document.querySelector("#prdTargetUser").value.trim(),
+    successMetric: document.querySelector("#prdSuccessMetric").value.trim(),
+    launchGate: document.querySelector("#prdLaunchGate").value.trim() || card.gate,
+    assumptions: parseLines(document.querySelector("#prdAssumptions").value),
+    acceptance: parseLines(document.querySelector("#prdAcceptance").value),
+    risks: parseLines(document.querySelector("#prdRisks").value),
+  };
+  card.agentSpec = {
+    role: document.querySelector("#agentRole").value.trim() || "Codex implementation agent",
+    context: document.querySelector("#agentContext").value.trim(),
+    doneChecks: parseLines(document.querySelector("#agentDoneChecks").value),
+    verification: parseLines(document.querySelector("#agentVerification").value),
+  };
   card.prd = document.querySelector("#detailPrd").value.trim();
   card.prompt = document.querySelector("#detailPrompt").value.trim();
-  card.signals = parseLines(document.querySelector("#detailSignals").value);
-  card.agentRuns = parseLines(document.querySelector("#detailAgentRuns").value);
-  card.decisions = parseLines(document.querySelector("#detailDecisions").value);
+  card.signals = collectInlineValues("signals");
+  card.agentRuns = collectInlineValues("agentRuns");
+  card.decisions = collectInlineValues("decisions");
   card.checks = card.checks.map((check) => ({
     ...check,
     done: Boolean(document.querySelector(`[data-check-id="${cssEscape(check.id)}"]`)?.checked),
+    label: document.querySelector(`[data-check-label="${cssEscape(check.id)}"]`)?.value.trim() || check.label,
   }));
   card.updatedAt = new Date().toISOString();
+  saveState();
+  renderApp();
+}
+
+function collectInlineValues(type) {
+  return [...document.querySelectorAll(`[data-inline-type="${type}"]`)]
+    .map((input) => input.value.trim())
+    .filter(Boolean);
+}
+
+function addListItem(type) {
+  const card = findCard(activeCardId);
+  if (!card) return;
+  const input = {
+    context: "#newContextInput",
+    signals: "#newSignalInput",
+    agentRuns: "#newAgentRunInput",
+    decisions: "#newDecisionInput",
+  }[type];
+  const value = document.querySelector(input).value.trim();
+  if (!value) return;
+  card[type].push(value);
+  document.querySelector(input).value = "";
+  card.updatedAt = new Date().toISOString();
+  saveState();
+  renderApp();
+}
+
+function removeListItem(type, index) {
+  const card = findCard(activeCardId);
+  if (!card) return;
+  card[type].splice(Number(index), 1);
+  card.updatedAt = new Date().toISOString();
+  saveState();
+  renderApp();
+}
+
+function addCheck() {
+  const card = findCard(activeCardId);
+  if (!card) return;
+  const input = document.querySelector("#newCheckInput");
+  const label = input.value.trim();
+  if (!label) return;
+  card.checks.push({ id: `${card.id}-check-${Date.now()}`, label, done: false });
+  input.value = "";
+  card.updatedAt = new Date().toISOString();
+  saveState();
+  renderApp();
+}
+
+function removeCheck(checkId) {
+  const card = findCard(activeCardId);
+  if (!card) return;
+  card.checks = card.checks.filter((check) => check.id !== checkId);
+  card.updatedAt = new Date().toISOString();
+  saveState();
+  renderApp();
+}
+
+function generatePrd(card) {
+  const fields = card.prdFields;
+  return [
+    `# ${card.title}`,
+    "",
+    "## Problem",
+    fields.problem || card.outcome,
+    "",
+    "## Target User",
+    fields.targetUser || "Solo builders and small teams using AI coding agents.",
+    "",
+    "## Success Metric",
+    fields.successMetric || "A builder can understand what to do next within 30 seconds.",
+    "",
+    "## Assumptions",
+    bulletList(fields.assumptions),
+    "",
+    "## Acceptance Criteria",
+    bulletList(fields.acceptance),
+    "",
+    "## Risks",
+    bulletList(fields.risks),
+    "",
+    "## Launch Gate",
+    fields.launchGate || card.gate,
+  ].join("\n");
+}
+
+function generateAgentPrompt(card) {
+  const spec = card.agentSpec;
+  return [
+    `Role: ${spec.role || "Codex implementation agent"}`,
+    "",
+    `Card: ${card.title}`,
+    `Outcome: ${card.outcome}`,
+    "",
+    "Context:",
+    spec.context || card.prd || card.context.join(", "),
+    "",
+    "Done checks:",
+    bulletList(spec.doneChecks),
+    "",
+    "Verification steps:",
+    bulletList(spec.verification),
+    "",
+    `Launch gate: ${card.gate}`,
+  ].join("\n");
+}
+
+function bulletList(items) {
+  return (items.length ? items : ["TBD"]).map((item) => `- ${item}`).join("\n");
+}
+
+function addActivity(activity) {
+  state.activity.unshift({
+    id: `activity-${Date.now()}`,
+    projectId: activity.projectId || state.projects[0]?.id || "",
+    source: activity.source || "Codex",
+    status: activity.status || "Queued",
+    title: activity.title,
+    detail: activity.detail || "",
+    linkedCardId: activity.linkedCardId || "",
+    createdAt: new Date().toISOString(),
+  });
+}
+
+function addManualActivity(event) {
+  event.preventDefault();
+  addActivity({
+    source: "Codex",
+    status: document.querySelector("#activityStatus").value,
+    title: document.querySelector("#activityTitle").value.trim(),
+    detail: document.querySelector("#activityDetail").value.trim(),
+  });
   saveState();
   renderApp();
 }
@@ -880,6 +1256,7 @@ function updateCardFromDetail() {
 function runWorkflow(type) {
   const card = findCard(activeCardId);
   if (!card) return;
+  syncGuidedFields(card);
 
   if (type === "capture") {
     addUnique(card.context, "Signal");
@@ -890,15 +1267,47 @@ function runWorkflow(type) {
 
   if (type === "prd") {
     addUnique(card.context, "PRD");
-    card.prd = `Problem\n${card.outcome}\n\nTarget user\nSolo builders and small teams using AI coding agents.\n\nAssumptions\n- The workflow is valuable if it reduces context loss.\n- The feature should be useful before integrations exist.\n\nAcceptance criteria\n- Card outcome is visible.\n- Launch gate is explicit.\n- Risk is scored before build.\n\nLaunch gate\n${card.gate}`;
+    card.prdFields = {
+      problem: card.prdFields.problem || card.outcome,
+      targetUser: card.prdFields.targetUser || "Solo builders and small teams using AI coding agents.",
+      successMetric: card.prdFields.successMetric || "A builder can understand and verify the work within 30 seconds.",
+      assumptions: card.prdFields.assumptions.length
+        ? card.prdFields.assumptions
+        : ["The workflow is valuable if it reduces context loss.", "The feature should be useful before integrations exist."],
+      acceptance: card.prdFields.acceptance.length
+        ? card.prdFields.acceptance
+        : ["Card outcome is visible.", "Launch gate is explicit.", "Risk is scored before build."],
+      risks: card.prdFields.risks.length ? card.prdFields.risks : [`Current risk score is ${card.risk}/10.`],
+      launchGate: card.prdFields.launchGate || card.gate,
+    };
+    card.prd = generatePrd(card);
     card.status = "Spec";
     card.column = "Shape";
   }
 
   if (type === "agent") {
     addUnique(card.context, "Agent Log");
-    card.prompt = `Implement the card \"${card.title}\".\n\nOutcome: ${card.outcome}\n\nDone checks:\n- Preserve the core product intent.\n- Update UI/data model as needed.\n- Verify the launch gate: ${card.gate}`;
-    card.agentRuns.unshift(`${card.owner} queued mission for ${card.title}.`);
+    card.agentSpec = {
+      role: card.agentSpec.role || `${card.owner} implementation agent`,
+      context:
+        card.agentSpec.context ||
+        `Card: ${card.title}\nOutcome: ${card.outcome}\nPRD: ${card.prd || "No PRD yet."}`,
+      doneChecks: card.agentSpec.doneChecks.length
+        ? card.agentSpec.doneChecks
+        : card.checks.map((check) => check.label),
+      verification: card.agentSpec.verification.length
+        ? card.agentSpec.verification
+        : ["Run the app locally.", "Check affected UI states.", `Verify launch gate: ${card.gate}`],
+    };
+    card.prompt = generateAgentPrompt(card);
+    card.agentRuns.unshift(`${card.owner} queued structured mission for ${card.title}.`);
+    addActivity({
+      source: card.owner || "Codex",
+      status: "Queued",
+      title: `Agent mission: ${card.title}`,
+      detail: card.prompt.split("\n").slice(0, 4).join(" "),
+      linkedCardId: card.id,
+    });
     card.status = "Active";
     card.column = "Build Watch";
   }
@@ -917,6 +1326,25 @@ function runWorkflow(type) {
   card.updatedAt = new Date().toISOString();
   saveState();
   renderApp();
+}
+
+function syncGuidedFields(card) {
+  if (!document.querySelector("#detailId")?.value) return;
+  card.prdFields = {
+    problem: document.querySelector("#prdProblem").value.trim(),
+    targetUser: document.querySelector("#prdTargetUser").value.trim(),
+    successMetric: document.querySelector("#prdSuccessMetric").value.trim(),
+    launchGate: document.querySelector("#prdLaunchGate").value.trim() || card.gate,
+    assumptions: parseLines(document.querySelector("#prdAssumptions").value),
+    acceptance: parseLines(document.querySelector("#prdAcceptance").value),
+    risks: parseLines(document.querySelector("#prdRisks").value),
+  };
+  card.agentSpec = {
+    role: document.querySelector("#agentRole").value.trim() || "Codex implementation agent",
+    context: document.querySelector("#agentContext").value.trim(),
+    doneChecks: parseLines(document.querySelector("#agentDoneChecks").value),
+    verification: parseLines(document.querySelector("#agentVerification").value),
+  };
 }
 
 function createCardFromForm() {
@@ -941,12 +1369,88 @@ function createCardFromForm() {
   return newCard.id;
 }
 
+function captureQuickIdea(event) {
+  event.preventDefault();
+  const title = document.querySelector("#quickIdeaTitle").value.trim();
+  const signal = document.querySelector("#quickIdeaSignal").value.trim();
+  if (!title || !signal) return;
+  const id = `idea-${Date.now()}`;
+  state.cards.push(
+    createSeedCard({
+      id,
+      column: "Idea Intake",
+      order: nextOrder("Idea Intake"),
+      title,
+      outcome: signal,
+      owner: "Founder",
+      status: "Signal",
+      impact: 5,
+      confidence: 4,
+      risk: 4,
+      context: ["Signal"],
+      gate: "Needs triage",
+      signals: [signal],
+    }),
+  );
+  saveState();
+  renderApp();
+  openDetail(id);
+}
+
 function resetBoard() {
   state = structuredClone(seedState);
   activeCardId = null;
   saveState();
   closeDetail();
   renderApp();
+}
+
+function exportState() {
+  state.backend.lastExportedAt = new Date().toISOString();
+  saveState();
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `vibepm-export-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+  renderApp();
+}
+
+function importState(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.addEventListener("load", () => {
+    try {
+      const imported = JSON.parse(reader.result);
+      state = normalizeImportedState(imported);
+      saveState();
+      activeCardId = null;
+      closeDetail();
+      renderApp();
+    } catch {
+      alert("Import failed. The selected file is not valid VibePM JSON.");
+    } finally {
+      importInput.value = "";
+    }
+  });
+  reader.readAsText(file);
+}
+
+function normalizeImportedState(imported) {
+  if (Array.isArray(imported.cards)) {
+    return normalizeState(imported);
+  }
+  if (Array.isArray(imported.projects) || Array.isArray(imported.activity)) {
+    return normalizeState({
+      ...state,
+      projects: imported.projects || state.projects,
+      activity: imported.activity || state.activity,
+    });
+  }
+  throw new Error("Unsupported import");
 }
 
 function deleteActiveCard() {
@@ -1045,6 +1549,10 @@ document.querySelector("#newCardButton").addEventListener("click", () => {
   dialog.showModal();
 });
 
+exportButton.addEventListener("click", exportState);
+importButton.addEventListener("click", () => importInput.click());
+importInput.addEventListener("change", importState);
+
 document.querySelector("#closeDetailButton").addEventListener("click", closeDetail);
 document.querySelector("#deleteCardButton").addEventListener("click", deleteActiveCard);
 document.querySelector("#resetBoardButton").addEventListener("click", resetBoard);
@@ -1066,6 +1574,18 @@ detailForm.addEventListener("submit", (event) => {
 
 document.querySelectorAll("[data-workflow]").forEach((button) => {
   button.addEventListener("click", () => runWorkflow(button.dataset.workflow));
+});
+
+document.addEventListener("click", (event) => {
+  const addButton = event.target.closest("[data-add-list-item]");
+  if (addButton) {
+    addListItem(addButton.dataset.addListItem);
+  }
+
+  const removeButton = event.target.closest("[data-remove-list-item]");
+  if (removeButton) {
+    removeListItem(removeButton.dataset.removeListItem, removeButton.dataset.removeIndex);
+  }
 });
 
 document.querySelectorAll(".detail-tab").forEach((tab) => {
