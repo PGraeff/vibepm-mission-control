@@ -10,6 +10,12 @@ A dark-mode static prototype for the VibePM product-management mission control U
 - Search and status filtering
 - New-card dialog
 - Drag-and-drop card movement
+- Local persistence with `localStorage`
+- Editable card detail drawer
+- PRD, prompt, signal, agent run, launch check, and decision sections
+- Workflow actions for capture, PRD draft, agent mission, and launch check
+- Priority and risk sorting
+- JSON schema for the local data model in `schemas.json`
 
 ## Run locally
 

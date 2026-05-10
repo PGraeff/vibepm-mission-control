@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vibepm.local/schemas.json",
+  "title": "VibePM Mission Control Data Model",
+  "type": "object",
+  "required": ["version", "cards"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 2
+    },
+    "cards": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/card"
+      }
+    }
+  },
+  "$defs": {
+    "card": {
+      "type": "object",
+      "required": [
+        "id",
+        "column",
+        "order",
+        "title",
+        "outcome",
+        "owner",
+        "status",
+        "impact",
+        "confidence",
+        "risk",
+        "context",
+        "gate",
+        "prd",
+        "prompt",
+        "signals",
+        "agentRuns",
+        "decisions",
+        "checks",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "column": {
+          "type": "string",
+          "enum": ["Idea Intake", "Shape", "Build Watch", "Launch Ready"]
+        },
+        "order": { "type": "number" },
+        "title": { "type": "string" },
+        "outcome": { "type": "string" },
+        "owner": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["Signal", "Draft", "Spec", "Active", "Review", "Guard", "Ship", "Blocked"]
+        },
+        "impact": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "confidence": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "risk": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "context": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "gate": { "type": "string" },
+        "prd": { "type": "string" },
+        "prompt": { "type": "string" },
+        "signals": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "agentRuns": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "decisions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/launchCheck"
+          }
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "launchCheck": {
+      "type": "object",
+      "required": ["id", "label", "done"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "done": { "type": "boolean" }
+      }
+    }
+  }
+}

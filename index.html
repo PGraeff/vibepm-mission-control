@@ -77,6 +77,11 @@
               <option value="Ship">Ship</option>
               <option value="Blocked">Blocked</option>
             </select>
+            <select id="sortMode" aria-label="Sort cards">
+              <option value="manual">Manual order</option>
+              <option value="priority">Priority score</option>
+              <option value="risk">Highest risk</option>
+            </select>
             <button id="newCardButton" class="primary-button" type="button">New Card</button>
           </div>
         </header>
@@ -88,14 +93,9 @@
         <section class="rail-section">
           <div class="section-title">
             <h2>Today Brief</h2>
-            <span class="risk-chip">Medium risk</span>
+            <span class="risk-chip" id="briefRisk">Medium risk</span>
           </div>
-          <ul class="brief-list">
-            <li><strong>Moved:</strong> PRD co-pilot gained acceptance checks.</li>
-            <li><strong>Blocked:</strong> Mobile nav still needs dogfood review.</li>
-            <li><strong>Decision:</strong> Pick launch scope for beta imports.</li>
-            <li><strong>Signal:</strong> Discord asks cluster around clipper flow.</li>
-          </ul>
+          <ul class="brief-list" id="briefList"></ul>
         </section>
 
         <section class="rail-section">
@@ -117,13 +117,9 @@
         <section class="rail-section">
           <div class="section-title">
             <h2>Founder Decisions</h2>
-            <span>3 open</span>
+            <span id="decisionCount">3 open</span>
           </div>
-          <div class="decision-list">
-            <button type="button">Scope tradeoff: launch gates or PRD depth?</button>
-            <button type="button">Sequence beta import before clipper?</button>
-            <button type="button">Accept medium telemetry risk for dogfood?</button>
-          </div>
+          <div class="decision-list" id="decisionList"></div>
         </section>
       </aside>
     </div>
@@ -176,6 +172,125 @@
         </div>
       </form>
     </dialog>
+
+    <aside class="detail-drawer" id="detailDrawer" aria-label="Card detail editor" aria-hidden="true">
+      <form class="detail-form" id="detailForm">
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow" id="detailEyebrow">Product card</p>
+            <h2 id="detailHeading">Card details</h2>
+          </div>
+          <button class="icon-button" id="closeDetailButton" type="button" aria-label="Close">x</button>
+        </div>
+
+        <div class="workflow-bar" aria-label="Card workflow actions">
+          <button class="secondary-button" type="button" data-workflow="capture">Capture Idea</button>
+          <button class="secondary-button" type="button" data-workflow="prd">Draft PRD</button>
+          <button class="secondary-button" type="button" data-workflow="agent">Agent Mission</button>
+          <button class="secondary-button" type="button" data-workflow="launch">Launch Check</button>
+        </div>
+
+        <input id="detailId" type="hidden" />
+        <label>
+          Title
+          <input id="detailTitle" required />
+        </label>
+        <label>
+          Product outcome
+          <textarea id="detailOutcome" rows="3" required></textarea>
+        </label>
+
+        <div class="form-grid">
+          <label>
+            Column
+            <select id="detailColumn"></select>
+          </label>
+          <label>
+            Status
+            <select id="detailStatus"></select>
+          </label>
+          <label>
+            Owner / agent
+            <input id="detailOwner" />
+          </label>
+          <label>
+            Launch gate
+            <input id="detailGate" />
+          </label>
+        </div>
+
+        <div class="score-grid">
+          <label>
+            Impact
+            <input id="detailImpact" type="number" min="1" max="10" />
+          </label>
+          <label>
+            Confidence
+            <input id="detailConfidence" type="number" min="1" max="10" />
+          </label>
+          <label>
+            Risk
+            <input id="detailRisk" type="number" min="1" max="10" />
+          </label>
+        </div>
+
+        <label>
+          Linked context
+          <input id="detailContext" placeholder="PRD, Prompt, GitHub PR" />
+        </label>
+
+        <div class="detail-tabs" role="tablist" aria-label="Card detail sections">
+          <button class="detail-tab active" type="button" data-section="prd">PRD</button>
+          <button class="detail-tab" type="button" data-section="prompt">Prompt</button>
+          <button class="detail-tab" type="button" data-section="signals">Signals</button>
+          <button class="detail-tab" type="button" data-section="agents">Agents</button>
+          <button class="detail-tab" type="button" data-section="checks">Checks</button>
+          <button class="detail-tab" type="button" data-section="decisions">Decisions</button>
+        </div>
+
+        <section class="detail-section active" data-section-panel="prd">
+          <label>
+            PRD notes
+            <textarea id="detailPrd" rows="7"></textarea>
+          </label>
+        </section>
+        <section class="detail-section" data-section-panel="prompt">
+          <label>
+            Agent prompt
+            <textarea id="detailPrompt" rows="7"></textarea>
+          </label>
+        </section>
+        <section class="detail-section" data-section-panel="signals">
+          <label>
+            User signals
+            <textarea id="detailSignals" rows="7" placeholder="One signal per line"></textarea>
+          </label>
+        </section>
+        <section class="detail-section" data-section-panel="agents">
+          <label>
+            Agent runs
+            <textarea id="detailAgentRuns" rows="7" placeholder="One agent update per line"></textarea>
+          </label>
+        </section>
+        <section class="detail-section" data-section-panel="checks">
+          <div class="check-list" id="detailChecks"></div>
+        </section>
+        <section class="detail-section" data-section-panel="decisions">
+          <label>
+            Founder decisions
+            <textarea id="detailDecisions" rows="7" placeholder="One decision per line"></textarea>
+          </label>
+        </section>
+
+        <div class="dialog-actions">
+          <button class="secondary-button" id="deleteCardButton" type="button">Delete</button>
+          <div>
+            <button class="secondary-button" id="resetBoardButton" type="button">Reset Board</button>
+            <button class="primary-button" type="submit">Save Changes</button>
+          </div>
+        </div>
+      </form>
+    </aside>
 
     <script src="./app.js"></script>
   </body>
