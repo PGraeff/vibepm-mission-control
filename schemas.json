@@ -132,6 +132,9 @@
         "path": { "type": "string" },
         "repo": { "type": "string" },
         "branch": { "type": "string" },
+        "productGoal": { "type": "string" },
+        "currentFocus": { "type": "string" },
+        "hasPlaybook": { "type": "boolean" },
         "status": { "type": "string" },
         "dirtyFiles": {
           "type": "array",

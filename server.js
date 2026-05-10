@@ -141,6 +141,7 @@ async function findGitProjects(dir, depth, results) {
 async function inspectProject(dir) {
   const name = path.basename(dir);
   const id = `project-${slug(name)}`;
+  const playbook = await readProjectPlaybook(dir);
   const [branch, remote, status, lastCommit] = await Promise.all([
     git(dir, ["branch", "--show-current"]),
     git(dir, ["remote", "get-url", "origin"]),
@@ -159,7 +160,7 @@ async function inspectProject(dir) {
     source: "Git",
     status: dirtyFiles.length ? "Active" : "Observed",
     title: lastCommit ? `Latest commit in ${name}` : `Project discovered: ${name}`,
-    detail: lastCommit || dir,
+    detail: playbook.currentFocus ? `${playbook.currentFocus} Latest: ${lastCommit || dir}` : lastCommit || dir,
     linkedCardId: "",
     createdAt: new Date().toISOString(),
   });
@@ -168,14 +169,17 @@ async function inspectProject(dir) {
     cards.push(makeGeneratedCard({
       id: `generated-${id}-dirty`,
       column: "Build Watch",
-      title: `${name}: uncommitted work`,
-      outcome: `${dirtyFiles.length} changed files need review, commit, or cleanup.`,
+      title: `${name}: review current local work`,
+      outcome: playbook.currentFocus
+        ? `${dirtyFiles.length} changed files while working on: ${playbook.currentFocus}`
+        : `${dirtyFiles.length} changed files need review, commit, or cleanup.`,
       owner: "Codex",
       status: "Review",
       risk: Math.min(9, 4 + dirtyFiles.length),
-      context: ["Git", "Local project"],
+      context: ["Git", "Local project", playbook.hasPlaybook ? "VIBEPM.md" : "No playbook"],
       gate: "Review dirty files",
       agentRuns: [`${dirtyFiles.length} changed files detected on ${branch || "current branch"}.`],
+      decisions: playbook.hasPlaybook ? [] : ["Add VIBEPM.md so generated cards reflect product intent."],
       checks: dirtyFiles.slice(0, 6).map((file, index) => ({
         id: `dirty-${slug(name)}-${index}`,
         label: file,
@@ -188,14 +192,31 @@ async function inspectProject(dir) {
     cards.push(makeGeneratedCard({
       id: `generated-${id}-todos`,
       column: "Idea Intake",
-      title: `${name}: TODO/FIXME backlog`,
-      outcome: `${todoFindings.length} TODO/FIXME comments may need product or engineering triage.`,
+      title: `${name}: triage code notes`,
+      outcome: playbook.currentFocus
+        ? `${todoFindings.length} TODO/FIXME comments found. Triage them against: ${playbook.currentFocus}`
+        : `${todoFindings.length} TODO/FIXME comments may need product or engineering triage.`,
       owner: "Codex",
       status: "Signal",
       risk: 5,
-      context: ["TODO", "Local project"],
+      context: ["TODO", "Local project", playbook.hasPlaybook ? "VIBEPM.md" : "No playbook"],
       gate: "Needs triage",
       signals: todoFindings.slice(0, 8),
+    }));
+  }
+
+  if (!playbook.hasPlaybook) {
+    cards.push(makeGeneratedCard({
+      id: `generated-${id}-playbook`,
+      column: "Idea Intake",
+      title: `${name}: add project operating brief`,
+      outcome: "Add VIBEPM.md so Codex knows the product goal, current focus, useful commands, launch checks, and what to ignore.",
+      owner: "Founder",
+      status: "Draft",
+      risk: 4,
+      context: ["VIBEPM.md", "Project setup"],
+      gate: "Add project playbook",
+      checks: [{ id: `playbook-${slug(name)}`, label: "Create VIBEPM.md from docs/VIBEPM_TEMPLATE.md", done: false }],
     }));
   }
 
@@ -220,6 +241,9 @@ async function inspectProject(dir) {
     path: dir,
     repo: remote,
     branch,
+    productGoal: playbook.productGoal,
+    currentFocus: playbook.currentFocus,
+    hasPlaybook: playbook.hasPlaybook,
     status: dirtyFiles.length ? "Active" : "Clean",
     dirtyFiles,
     latestCommit: lastCommit,
@@ -264,7 +288,7 @@ function makeGeneratedCard(overrides) {
     },
     signals: overrides.signals || [],
     agentRuns: overrides.agentRuns || [],
-    decisions: [],
+    decisions: overrides.decisions || [],
     checks:
       overrides.checks ||
       [
@@ -273,6 +297,26 @@ function makeGeneratedCard(overrides) {
       ],
     updatedAt: new Date().toISOString(),
   };
+}
+
+async function readProjectPlaybook(dir) {
+  const filePath = path.join(dir, "VIBEPM.md");
+  if (!(await exists(filePath))) {
+    return { hasPlaybook: false, productGoal: "", currentFocus: "" };
+  }
+
+  const text = await readFile(filePath, "utf8");
+  return {
+    hasPlaybook: true,
+    productGoal: extractSection(text, "Product Goal"),
+    currentFocus: extractSection(text, "Current Focus"),
+    raw: text.slice(0, 4000),
+  };
+}
+
+function extractSection(text, heading) {
+  const pattern = new RegExp(`## ${heading}\\s+([\\s\\S]*?)(?=\\n## |$)`, "i");
+  return (text.match(pattern)?.[1] || "").trim().replace(/\s+/g, " ").slice(0, 260);
 }
 
 function mergeScannedState(state, scanned) {

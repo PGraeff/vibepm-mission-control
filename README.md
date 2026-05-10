@@ -29,6 +29,7 @@ A dark-mode static prototype for the VibePM product-management mission control U
 - Local Node server with JSON state storage in `.data/vibepm-state.json`
 - Project scanner that reads local Git repos, branches, remotes, dirty files, latest commits, TODO/FIXME comments, and launch-doc gaps
 - `Sync Projects` action for generating real cards/activity from current projects
+- Optional per-project `VIBEPM.md` playbook so generated cards reflect product intent instead of raw Git noise
 
 ## Run locally
 
@@ -51,3 +52,7 @@ npm run scan
 ```
 
 Or use the `Sync Projects` button in the app.
+
+## Teach VibePM About A Project
+
+Copy `docs/VIBEPM_TEMPLATE.md` into a project as `VIBEPM.md`, then fill in product goal, current focus, useful commands, launch checklist, and what Codex should ignore. The scanner reads this file and uses it to generate more useful cards.

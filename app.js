@@ -831,6 +831,8 @@ function projectItem(project) {
     <div class="project-item">
       <strong>${escapeHtml(project.name)}</strong>
       <span>${escapeHtml(project.status)} - ${escapeHtml(project.path)}</span>
+      <span>${project.hasPlaybook ? "VIBEPM.md connected" : "No VIBEPM.md playbook yet"}</span>
+      ${project.currentFocus ? `<small>Focus: ${escapeHtml(project.currentFocus)}</small>` : ""}
       <small>${escapeHtml(project.repo || "No repo connected")}</small>
     </div>
   `;
