@@ -50,6 +50,8 @@ button {
   display: grid;
   grid-template-columns: 248px minmax(620px, 1fr) 356px;
   height: 100vh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -59,6 +61,7 @@ button {
   padding: 18px;
   border-right: 1px solid var(--line);
   background: #090e14;
+  min-height: 0;
 }
 
 .workspace {
@@ -160,6 +163,7 @@ p {
   display: grid;
   grid-template-rows: auto 1fr;
   min-width: 0;
+  min-height: 0;
   background:
     linear-gradient(180deg, rgba(77, 141, 255, 0.06), transparent 260px),
     var(--surface);
@@ -758,13 +762,18 @@ select {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
+  max-height: 100vh;
   padding: 14px;
   overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   border-left: 1px solid var(--line);
   background: #090e14;
 }
 
 .rail-section {
+  flex: 0 0 auto;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
