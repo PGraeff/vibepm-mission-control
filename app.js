@@ -465,6 +465,7 @@ function renderProjectSelector() {
 
 function renderCurrentView() {
   const meta = viewMeta(currentView);
+  document.querySelector(".app-shell").dataset.view = slug(currentView);
   pageEyebrow.textContent = meta.eyebrow;
   pageTitle.textContent = meta.title;
   pageSubtitle.textContent = meta.subtitle;
@@ -490,56 +491,69 @@ function renderProjectOverview() {
   const blocked = cards.filter(isBlocked).length;
   const active = cards.filter((card) => ["Active", "Review", "Guard"].includes(card.status)).slice(0, 5);
   const nextMilestone = milestones.find((milestone) => !milestone.done);
+  const doneMilestones = milestones.filter((milestone) => milestone.done).length;
+  const progress = milestones.length ? Math.round((doneMilestones / milestones.length) * 100) : 0;
+  const pulseItems = [
+    ["Ideas", cards.filter((card) => card.column === "Idea Intake").length, "idea"],
+    ["Build", cards.filter((card) => ["Spec", "Active", "Review"].includes(card.status)).length, "build"],
+    ["Launch", ready, "launch"],
+  ];
 
   viewRoot.className = "view-root page-scroll";
   viewRoot.innerHTML = `
-    <section class="hero-panel">
+    <section class="hero-panel compact-hero">
       <div>
-        <p class="eyebrow">For vibe coders</p>
-        <h2>Create and give life to your projects</h2>
-        <p>Keep your ideas, Codex work, GitHub items, and launch steps in one simple place.</p>
+        <p class="eyebrow">Project pulse</p>
+        <h2>${escapeHtml(project?.name || "All Projects")}</h2>
+        <div class="pulse-track">
+          ${pulseItems
+            .map(
+              ([label, value, tone]) => `
+                <span class="pulse-step pulse-${tone}">
+                  <i>${escapeHtml(value)}</i>
+                  <b>${escapeHtml(label)}</b>
+                </span>
+              `,
+            )
+            .join("")}
+        </div>
       </div>
       ${help("This page avoids development jargon. It shows what matters next for the selected project.")}
     </section>
     <div class="metric-strip">
-      ${summaryMetric("Things to do", openWork, "Cards that still need attention.")}
-      ${summaryMetric("Being worked on", active.length, "Work currently being handled by you, Codex, or another tool.")}
-      ${summaryMetric("Blocked", blocked, "Items that may stop you from launching or moving forward.")}
-      ${summaryMetric("Ready soon", ready, "Items close to being shared, shipped, or tested.")}
+      ${summaryMetric("To do", openWork, "Still needs attention.")}
+      ${summaryMetric("Doing", active.length, "Being worked on.")}
+      ${summaryMetric("Stuck", blocked, "May block progress.")}
+      ${summaryMetric("Ready", ready, "Close to shareable.")}
     </div>
     <div class="page-grid">
       <section class="page-panel wide-panel">
         <div class="section-title">
-          <h2>Next Things To Do</h2>
+          <h2>Next</h2>
           ${help("These are the clearest next actions for the selected project. Open one to see details.")}
         </div>
         <div class="simple-list">
-          ${active.map(simpleCardRow).join("") || emptyState("Nothing urgent yet. Add a task or refresh the project.")}
+          ${active.map(simpleCardRow).join("") || emptyState("Nothing urgent.")}
         </div>
       </section>
       <section class="page-panel">
         <div class="section-title">
-          <h2>Project Goal</h2>
+          <h2>Focus</h2>
           ${help("This comes from VIBEPM.md when the project has one.")}
         </div>
-        <p class="plain-text">${escapeHtml(project?.productGoal || "Add a VIBEPM.md file to explain what this project is trying to become.")}</p>
-      </section>
-      <section class="page-panel">
-        <div class="section-title">
-          <h2>Current Focus</h2>
-          ${help("Tell Codex what matters right now so it creates better cards.")}
-        </div>
-        <p class="plain-text">${escapeHtml(project?.currentFocus || "No focus set yet. Use VIBEPM.md to guide generated work.")}</p>
+        <p class="plain-text short-text">${escapeHtml(project?.currentFocus || project?.productGoal || "Add VIBEPM.md to guide Codex.")}</p>
       </section>
       <section class="page-panel wide-panel">
         <div class="section-title">
-          <h2>Next Milestone</h2>
+          <h2>Milestone</h2>
           ${help("A milestone is a simple checkpoint. It says what should be true soon.")}
         </div>
+        <div class="progress-head"><strong>${progress}%</strong><span>${doneMilestones}/${milestones.length || 0}</span></div>
+        <div class="big-progress"><span style="width: ${progress}%"></span></div>
         ${
           nextMilestone
-            ? `<button class="milestone-card" type="button" data-view-milestones="true"><strong>${escapeHtml(nextMilestone.title)}</strong><span>${escapeHtml(nextMilestone.outcome)}</span><small>${escapeHtml(nextMilestone.target)}</small></button>`
-            : emptyState("No open milestone. Create one on the Milestones page.")
+            ? `<button class="milestone-card compact-milestone" type="button" data-view-milestones="true"><strong>${escapeHtml(nextMilestone.title)}</strong><small>${escapeHtml(nextMilestone.target)}</small></button>`
+            : emptyState("No open milestone.")
         }
       </section>
     </div>
@@ -864,21 +878,20 @@ function getCardsForColumn(column) {
 
 function renderCard(card) {
   const blocked = isBlocked(card) ? " blocked-card" : "";
+  const progress = checkProgress(card);
   return `
     <article class="work-card${blocked}" draggable="true" data-card-id="${escapeHtml(card.id)}" tabindex="0">
       <div class="card-top">
         <h3>${escapeHtml(card.title)}</h3>
         <span class="status-pill status-${escapeHtml(card.status)}">${escapeHtml(card.status)}</span>
       </div>
-      <p class="outcome">${escapeHtml(card.outcome)}</p>
-      <div class="card-compact-meta">
-        <span>${escapeHtml(card.owner)}</span>
+      <div class="card-visual-meta" aria-label="Card scores">
         <span>P${priorityScore(card)}</span>
         <span class="risk-dot risk-${riskLevel(card.risk)}">R${card.risk}</span>
+        <span>${progress}%</span>
       </div>
-      <p class="gate-line">${escapeHtml(card.gate)}</p>
       <div class="progress-bar" aria-label="Launch check progress">
-        <span style="width: ${checkProgress(card)}%"></span>
+        <span style="width: ${progress}%"></span>
       </div>
     </article>
   `;
@@ -887,9 +900,9 @@ function renderCard(card) {
 function simpleCardRow(card) {
   return `
     <button class="simple-row" type="button" data-open-card="${escapeHtml(card.id)}">
+      <i class="row-dot status-${escapeHtml(card.status)}"></i>
       <span>
         <strong>${escapeHtml(card.title)}</strong>
-        <small>${escapeHtml(card.outcome)}</small>
       </span>
       <em>${simpleStatus(card.status)}</em>
     </button>
@@ -1025,10 +1038,10 @@ function scopedMilestones() {
   return (state.milestones || []).filter((milestone) => milestone.projectId === selectedProjectId);
 }
 
-function summaryMetric(label, value) {
+function summaryMetric(label, value, hint = "") {
   return `
     <div class="summary-metric">
-      <span>${escapeHtml(label)}</span>
+      <span>${escapeHtml(label)}${hint ? help(hint) : ""}</span>
       <strong>${escapeHtml(value)}</strong>
     </div>
   `;
@@ -1173,37 +1186,44 @@ function renderRail() {
   const shipCards = cards.filter((card) => card.column === "Launch Ready");
   const signals = cards
     .flatMap((card) => card.signals.map((signal) => ({ card, signal })))
-    .slice(0, 5);
+    .slice(0, 3);
   const agentRuns = cards
     .flatMap((card) => card.agentRuns.map((run) => ({ card, run })))
-    .slice(0, 5);
-  const activityRuns = scopedActivity().slice(0, 3);
+    .slice(0, 3);
+  const activityRuns = scopedActivity().slice(0, 2);
   const decisions = cards
     .flatMap((card) => card.decisions.map((decision) => ({ card, decision })))
-    .slice(0, 5);
+    .slice(0, 3);
   const highRisk = cards.filter((card) => card.risk >= 7).length;
 
-  document.querySelector("#briefRisk").textContent = highRisk > 1 ? "High risk" : "Medium risk";
+  document.querySelector("#briefRisk").textContent = highRisk ? `${highRisk} risk` : "Clear";
   document.querySelector("#briefList").innerHTML = [
-    ["Moved", `${activeCards.length} cards are in build, review, or guard.`],
-    ["Blocked", `${blockedCards.length || "No"} cards currently need attention.`],
-    ["Decision", decisions[0]?.decision || "No founder decision is blocking the board."],
-    ["Launch", `${shipCards.length} cards are launch ready.`],
+    ["Doing", activeCards.length, "cyan"],
+    ["Stuck", blockedCards.length, blockedCards.length ? "red" : "green"],
+    ["Ready", shipCards.length, "green"],
+    ["Decide", decisions.length, decisions.length ? "amber" : "green"],
   ]
-    .map(([label, value]) => `<li><strong>${label}:</strong> ${escapeHtml(value)}</li>`)
+    .map(
+      ([label, value, tone]) => `
+        <li class="mini-stat stat-${tone}">
+          <strong>${escapeHtml(value)}</strong>
+          <span>${escapeHtml(label)}</span>
+        </li>
+      `,
+    )
     .join("");
 
   document.querySelector("#signalList").innerHTML = signals.length
-    ? signals.map(({ card, signal }, index) => railItem(`${index + 1}. ${card.title}`, signal)).join("")
-    : railItem("No signals", "Open a card and add one signal per line.");
+    ? signals.map(({ card }) => railItem(card.title, simpleStatus(card.status))).join("")
+    : railItem("No clues", "Add signals");
 
   document.querySelector("#agentList").innerHTML = activityRuns.length
     ? activityRuns
-        .map((activity) => agentItem(activity.source, activity.title, activity.status, findCard(activity.linkedCardId)?.title || "Project activity"))
+        .map((activity) => agentItem(activity.source, activity.title, activity.status, findCard(activity.linkedCardId)?.title || "Project"))
         .join("")
     : agentRuns.length
       ? agentRuns.map(({ card, run }) => agentItem(card.owner, run, card.status, card.title)).join("")
-    : agentItem("No agent", "Create an agent mission from a card.", "Idle", "None");
+    : agentItem("Codex", "No active run", "Idle", "None");
 
   document.querySelector("#decisionCount").textContent = `${decisions.length} open`;
   document.querySelector("#decisionList").innerHTML = decisions.length
@@ -1213,7 +1233,7 @@ function renderRail() {
             `<button type="button" data-open-card="${escapeHtml(card.id)}">${escapeHtml(decision)}</button>`,
         )
         .join("")
-    : `<button type="button">No unresolved founder decisions.</button>`;
+    : `<button type="button">Nothing blocking.</button>`;
 
   document.querySelectorAll("[data-open-card]").forEach((button) => {
     button.addEventListener("click", () => openDetail(button.dataset.openCard));
@@ -1237,7 +1257,7 @@ function agentItem(name, task, stateName, linkedCard) {
         <span class="agent-state">${escapeHtml(stateName)}</span>
       </div>
       <span>${escapeHtml(task)}</span>
-      <span>Linked: ${escapeHtml(linkedCard)}</span>
+      <small>${escapeHtml(linkedCard)}</small>
     </div>
   `;
 }
