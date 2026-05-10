@@ -194,8 +194,13 @@ const seedState = {
 
 let state = loadState();
 let activeCardId = null;
+let currentView = "Mission Control";
 
-const board = document.querySelector("#board");
+const viewRoot = document.querySelector("#viewRoot");
+const pageEyebrow = document.querySelector("#pageEyebrow");
+const pageTitle = document.querySelector("#pageTitle");
+const pageSubtitle = document.querySelector("#pageSubtitle");
+const topbarActions = document.querySelector("#topbarActions");
 const searchInput = document.querySelector("#searchInput");
 const statusFilter = document.querySelector("#statusFilter");
 const sortMode = document.querySelector("#sortMode");
@@ -238,18 +243,35 @@ function saveState() {
 }
 
 function renderApp() {
-  renderBoard();
+  renderCurrentView();
   renderRail();
   if (activeCardId) {
     populateDetail(activeCardId);
   }
 }
 
+function renderCurrentView() {
+  const meta = viewMeta(currentView);
+  pageEyebrow.textContent = meta.eyebrow;
+  pageTitle.textContent = meta.title;
+  pageSubtitle.textContent = meta.subtitle;
+  topbarActions.classList.toggle("compact-actions", currentView !== "Mission Control");
+
+  if (currentView === "Mission Control") renderBoard();
+  if (currentView === "Roadmap") renderRoadmap();
+  if (currentView === "Idea Inbox") renderIdeaInbox();
+  if (currentView === "Agent Runs") renderAgentRuns();
+  if (currentView === "User Signals") renderUserSignals();
+  if (currentView === "Docs + PRDs") renderDocs();
+  if (currentView === "Launches") renderLaunches();
+}
+
 function renderBoard() {
   const query = searchInput.value.trim().toLowerCase();
   const status = statusFilter.value;
 
-  board.innerHTML = columns
+  viewRoot.className = "view-root board";
+  viewRoot.innerHTML = columns
     .map((column) => {
       const filteredCards = getCardsForColumn(column).filter((card) => {
         const matchesStatus = status === "all" || card.status === status;
@@ -290,6 +312,152 @@ function renderBoard() {
 
   wireCards();
   wireDragAndDrop();
+}
+
+function renderRoadmap() {
+  const cards = filteredCards().sort((a, b) => priorityScore(b) - priorityScore(a));
+  viewRoot.className = "view-root page-scroll";
+  viewRoot.innerHTML = `
+    <div class="metric-strip">
+      ${summaryMetric("Total cards", state.cards.length)}
+      ${summaryMetric("High priority", state.cards.filter((card) => priorityScore(card) >= 10).length)}
+      ${summaryMetric("Blocked", state.cards.filter(isBlocked).length)}
+      ${summaryMetric("Launch ready", state.cards.filter((card) => card.column === "Launch Ready").length)}
+    </div>
+    <div class="table-panel">
+      <div class="table-row table-head">
+        <span>Opportunity</span>
+        <span>Stage</span>
+        <span>Owner</span>
+        <span>Priority</span>
+        <span>Risk</span>
+      </div>
+      ${cards.map((card) => roadmapRow(card)).join("")}
+    </div>
+  `;
+  wireOpenRows();
+}
+
+function renderIdeaInbox() {
+  const cards = filteredCards()
+    .filter((card) => card.column === "Idea Intake" || card.status === "Signal" || card.status === "Draft")
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  viewRoot.className = "view-root page-scroll";
+  viewRoot.innerHTML = `
+    <div class="page-grid">
+      <section class="page-panel wide-panel">
+        <div class="section-title">
+          <h2>Raw Capture Queue</h2>
+          <span>${cards.length} inputs</span>
+        </div>
+        <div class="inbox-list">
+          ${cards.map((card) => inboxItem(card)).join("")}
+        </div>
+      </section>
+      <section class="page-panel">
+        <div class="section-title">
+          <h2>Triage Rules</h2>
+          <span>Mock</span>
+        </div>
+        <div class="rule-list">
+          <span>High signal plus high confidence moves to Shape.</span>
+          <span>Low confidence creates a founder decision.</span>
+          <span>Blocked launch gate creates a Build Watch guard.</span>
+        </div>
+      </section>
+    </div>
+  `;
+  wireOpenRows();
+}
+
+function renderAgentRuns() {
+  const runs = filteredCards().flatMap((card) =>
+    card.agentRuns.length
+      ? card.agentRuns.map((run) => ({ card, run }))
+      : card.context.includes("Agent Log")
+        ? [{ card, run: "Agent log linked but no run summary recorded." }]
+        : [],
+  );
+  viewRoot.className = "view-root page-scroll";
+  viewRoot.innerHTML = `
+    <div class="page-grid">
+      <section class="page-panel wide-panel">
+        <div class="section-title">
+          <h2>Agent Run Queue</h2>
+          <span>${runs.length} runs</span>
+        </div>
+        <div class="run-list">
+          ${runs.map(({ card, run }) => runItem(card, run)).join("") || emptyState("No agent runs yet. Open a card and use Agent Mission.")}
+        </div>
+      </section>
+      <section class="page-panel">
+        <div class="section-title">
+          <h2>State Mix</h2>
+          <span>Live</span>
+        </div>
+        <div class="stack-list">
+          ${statuses.map((status) => statusSummary(status)).join("")}
+        </div>
+      </section>
+    </div>
+  `;
+  wireOpenRows();
+}
+
+function renderUserSignals() {
+  const signals = filteredCards().flatMap((card) => card.signals.map((signal) => ({ card, signal })));
+  viewRoot.className = "view-root page-scroll";
+  viewRoot.innerHTML = `
+    <div class="page-grid">
+      <section class="page-panel wide-panel">
+        <div class="section-title">
+          <h2>Signal Stack</h2>
+          <span>${signals.length} signals</span>
+        </div>
+        <div class="signal-table">
+          ${signals.map(({ card, signal }) => signalRow(card, signal)).join("") || emptyState("No user signals yet. Add signals from card details.")}
+        </div>
+      </section>
+      <section class="page-panel">
+        <div class="section-title">
+          <h2>Sources</h2>
+          <span>Mock</span>
+        </div>
+        <div class="source-list">
+          ${["Discord", "Support", "Session replay", "GitHub", "Founder notes"].map((source) => `<span>${source}</span>`).join("")}
+        </div>
+      </section>
+    </div>
+  `;
+  wireOpenRows();
+}
+
+function renderDocs() {
+  const docs = filteredCards().filter((card) => card.prd || card.prompt || card.context.includes("PRD"));
+  viewRoot.className = "view-root page-scroll docs-grid";
+  viewRoot.innerHTML =
+    docs.map((card) => docCard(card)).join("") ||
+    emptyState("No docs yet. Open a card and use Draft PRD to create one.");
+  wireOpenRows();
+}
+
+function renderLaunches() {
+  const launchCards = filteredCards()
+    .filter((card) => card.column === "Launch Ready" || card.status === "Guard" || card.gate)
+    .sort((a, b) => b.risk - a.risk);
+  viewRoot.className = "view-root page-scroll";
+  viewRoot.innerHTML = `
+    <div class="metric-strip">
+      ${summaryMetric("Ready", launchCards.filter((card) => card.status === "Ship").length)}
+      ${summaryMetric("Guarded", launchCards.filter((card) => card.status === "Guard").length)}
+      ${summaryMetric("Blocked", launchCards.filter(isBlocked).length)}
+      ${summaryMetric("Checks", launchCards.reduce((sum, card) => sum + card.checks.length, 0))}
+    </div>
+    <div class="launch-list">
+      ${launchCards.map((card) => launchItem(card)).join("")}
+    </div>
+  `;
+  wireOpenRows();
 }
 
 function getCardsForColumn(column) {
@@ -334,6 +502,182 @@ function renderCard(card) {
       </div>
     </article>
   `;
+}
+
+function viewMeta(view) {
+  const metas = {
+    "Mission Control": {
+      eyebrow: "Product focus",
+      title: "Mission Control",
+      subtitle: "Beta launch readiness - product execution board",
+    },
+    Roadmap: {
+      eyebrow: "Planning",
+      title: "Roadmap",
+      subtitle: "Prioritized product opportunities from current board data",
+    },
+    "Idea Inbox": {
+      eyebrow: "Capture",
+      title: "Idea Inbox",
+      subtitle: "Raw and semi-structured inputs before they become scoped work",
+    },
+    "Agent Runs": {
+      eyebrow: "Execution",
+      title: "Agent Runs",
+      subtitle: "Active AI-agent work grouped by card and state",
+    },
+    "User Signals": {
+      eyebrow: "Intelligence",
+      title: "User Signals",
+      subtitle: "Ranked signals from users, market notes, and product feedback",
+    },
+    "Docs + PRDs": {
+      eyebrow: "Product docs",
+      title: "Docs + PRDs",
+      subtitle: "PRDs, prompts, assumptions, and card-linked product notes",
+    },
+    Launches: {
+      eyebrow: "Release",
+      title: "Launches",
+      subtitle: "Launch readiness, gates, checks, and ship queue",
+    },
+  };
+  return metas[view] || metas["Mission Control"];
+}
+
+function filteredCards() {
+  const query = searchInput.value.trim().toLowerCase();
+  const status = statusFilter.value;
+  return state.cards.filter((card) => {
+    const matchesStatus = status === "all" || card.status === status;
+    const searchable = [
+      card.title,
+      card.outcome,
+      card.owner,
+      card.status,
+      card.gate,
+      card.prd,
+      card.prompt,
+      ...card.context,
+      ...card.signals,
+      ...card.agentRuns,
+      ...card.decisions,
+    ]
+      .join(" ")
+      .toLowerCase();
+    return matchesStatus && searchable.includes(query);
+  });
+}
+
+function summaryMetric(label, value) {
+  return `
+    <div class="summary-metric">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `;
+}
+
+function roadmapRow(card) {
+  return `
+    <button class="table-row data-row" type="button" data-open-card="${escapeHtml(card.id)}">
+      <span>
+        <strong>${escapeHtml(card.title)}</strong>
+        <small>${escapeHtml(card.outcome)}</small>
+      </span>
+      <span>${escapeHtml(card.column)} / ${escapeHtml(card.status)}</span>
+      <span>${escapeHtml(card.owner)}</span>
+      <span>P${priorityScore(card)}</span>
+      <span>${card.risk}</span>
+    </button>
+  `;
+}
+
+function inboxItem(card) {
+  const firstSignal = card.signals[0] || card.outcome;
+  return `
+    <button class="inbox-item" type="button" data-open-card="${escapeHtml(card.id)}">
+      <span class="status-pill status-${escapeHtml(card.status)}">${escapeHtml(card.status)}</span>
+      <div>
+        <strong>${escapeHtml(card.title)}</strong>
+        <p>${escapeHtml(firstSignal)}</p>
+      </div>
+      <small>${escapeHtml(card.owner)}</small>
+    </button>
+  `;
+}
+
+function runItem(card, run) {
+  return `
+    <button class="run-item" type="button" data-open-card="${escapeHtml(card.id)}">
+      <div class="agent-head">
+        <strong>${escapeHtml(card.owner)}</strong>
+        <span class="agent-state">${escapeHtml(card.status)}</span>
+      </div>
+      <p>${escapeHtml(run)}</p>
+      <small>${escapeHtml(card.title)}</small>
+    </button>
+  `;
+}
+
+function statusSummary(status) {
+  const count = state.cards.filter((card) => card.status === status).length;
+  return `
+    <div class="stack-row">
+      <span>${escapeHtml(status)}</span>
+      <strong>${count}</strong>
+    </div>
+  `;
+}
+
+function signalRow(card, signal) {
+  return `
+    <button class="signal-row" type="button" data-open-card="${escapeHtml(card.id)}">
+      <span>${escapeHtml(signal)}</span>
+      <small>${escapeHtml(card.title)}</small>
+      <strong>P${priorityScore(card)}</strong>
+    </button>
+  `;
+}
+
+function docCard(card) {
+  return `
+    <button class="doc-card" type="button" data-open-card="${escapeHtml(card.id)}">
+      <div class="card-top">
+        <h3>${escapeHtml(card.title)}</h3>
+        <span class="status-pill status-${escapeHtml(card.status)}">${escapeHtml(card.status)}</span>
+      </div>
+      <p>${escapeHtml(card.prd || card.prompt || card.outcome).slice(0, 260)}</p>
+      <div class="context-row">
+        ${card.context.map((item) => `<span class="context-chip">${escapeHtml(item)}</span>`).join("")}
+      </div>
+    </button>
+  `;
+}
+
+function launchItem(card) {
+  const done = card.checks.filter((check) => check.done).length;
+  return `
+    <button class="launch-item" type="button" data-open-card="${escapeHtml(card.id)}">
+      <div>
+        <strong>${escapeHtml(card.title)}</strong>
+        <p>${escapeHtml(card.gate)}</p>
+      </div>
+      <span class="status-pill status-${escapeHtml(card.status)}">${escapeHtml(card.status)}</span>
+      <span>${done}/${card.checks.length} checks</span>
+      <span>Risk ${card.risk}</span>
+    </button>
+  `;
+}
+
+function emptyState(message) {
+  return `<div class="empty-state">${escapeHtml(message)}</div>`;
+}
+
+function wireOpenRows() {
+  document.querySelectorAll("[data-open-card]").forEach((button) => {
+    button.addEventListener("click", () => openDetail(button.dataset.openCard));
+  });
 }
 
 function renderRail() {
@@ -733,14 +1077,17 @@ document.querySelectorAll(".detail-tab").forEach((tab) => {
   });
 });
 
-searchInput.addEventListener("input", renderBoard);
-statusFilter.addEventListener("change", renderBoard);
-sortMode.addEventListener("change", renderBoard);
+searchInput.addEventListener("input", renderCurrentView);
+statusFilter.addEventListener("change", renderCurrentView);
+sortMode.addEventListener("change", renderCurrentView);
 
 document.querySelectorAll(".nav-item").forEach((item) => {
   item.addEventListener("click", () => {
+    currentView = item.dataset.view;
     document.querySelectorAll(".nav-item").forEach((nav) => nav.classList.remove("active"));
     item.classList.add("active");
+    closeDetail();
+    renderCurrentView();
   });
 });
 
