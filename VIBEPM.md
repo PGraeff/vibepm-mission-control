@@ -4,6 +4,8 @@
 
 Help solo builders and small teams turn ideas, local project activity, Codex work, and launch decisions into one useful product execution board.
 
+Marketing phrase to reuse: VibePM is for the growing community of vibecoders who lack industry-grade knowledge and want to create and give life to their projects.
+
 ## Current Focus
 
 Make VibePM useful on real local projects by scanning repos, generating clear project cards, and letting Codex understand what matters in each project.

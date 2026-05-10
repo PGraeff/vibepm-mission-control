@@ -23,33 +23,41 @@
         </label>
 
         <nav class="nav-list" aria-label="Primary navigation">
-          <button class="nav-item active" type="button" data-view="Mission Control">
-            <span class="nav-icon">MC</span>
-            Mission Control
+          <button class="nav-item active" type="button" data-view="Project Overview">
+            <span class="nav-icon">OV</span>
+            Overview
+          </button>
+          <button class="nav-item" type="button" data-view="Mission Control">
+            <span class="nav-icon">BD</span>
+            Work Board
           </button>
           <button class="nav-item" type="button" data-view="Roadmap">
-            <span class="nav-icon">RM</span>
-            Roadmap
+            <span class="nav-icon">PL</span>
+            Plan
+          </button>
+          <button class="nav-item" type="button" data-view="Milestones">
+            <span class="nav-icon">MS</span>
+            Milestones
           </button>
           <button class="nav-item" type="button" data-view="Idea Inbox">
             <span class="nav-icon">IN</span>
-            Idea Inbox
+            Ideas
           </button>
           <button class="nav-item" type="button" data-view="Agent Runs">
-            <span class="nav-icon">AG</span>
-            Agent Runs
+            <span class="nav-icon">CX</span>
+            Codex Work
           </button>
           <button class="nav-item" type="button" data-view="User Signals">
-            <span class="nav-icon">SG</span>
-            User Signals
+            <span class="nav-icon">FB</span>
+            Feedback
           </button>
           <button class="nav-item" type="button" data-view="Docs + PRDs">
-            <span class="nav-icon">PR</span>
-            Docs + PRDs
+            <span class="nav-icon">NT</span>
+            Notes
           </button>
           <button class="nav-item" type="button" data-view="Launches">
             <span class="nav-icon">LN</span>
-            Launches
+            Launch
           </button>
         </nav>
 
@@ -69,10 +77,10 @@
           <div class="topbar-actions" id="topbarActions">
             <label class="search">
               <span>Q</span>
-              <input id="searchInput" type="search" placeholder="Search cards, owners, context" />
+            <input id="searchInput" type="search" placeholder="Search work, ideas, notes" />
             </label>
             <select id="statusFilter" aria-label="Filter by status">
-              <option value="all">All states</option>
+              <option value="all">All work</option>
               <option value="Signal">Signal</option>
               <option value="Draft">Draft</option>
               <option value="Spec">Spec</option>
@@ -90,8 +98,8 @@
             <button id="exportButton" class="secondary-button" type="button">Export</button>
             <button id="importButton" class="secondary-button" type="button">Import</button>
             <input id="importInput" type="file" accept="application/json" hidden />
-            <button id="syncProjectsButton" class="secondary-button" type="button">Sync Projects</button>
-            <button id="newCardButton" class="primary-button" type="button">New Card</button>
+            <button id="syncProjectsButton" class="secondary-button" type="button">Refresh</button>
+            <button id="newCardButton" class="primary-button" type="button">New Task</button>
           </div>
         </header>
 
@@ -101,7 +109,7 @@
       <aside class="right-rail" aria-label="Product intelligence">
         <section class="rail-section">
           <div class="section-title">
-            <h2>Today Brief</h2>
+            <h2>Today</h2>
             <span class="risk-chip" id="briefRisk">Medium risk</span>
           </div>
           <ul class="brief-list" id="briefList"></ul>
@@ -109,7 +117,7 @@
 
         <section class="rail-section">
           <div class="section-title">
-            <h2>Signal Stack</h2>
+            <h2>User Clues</h2>
             <span>12 inputs</span>
           </div>
           <div class="signal-list" id="signalList"></div>
@@ -117,7 +125,7 @@
 
         <section class="rail-section">
           <div class="section-title">
-            <h2>Agent Swarm</h2>
+            <h2>Codex Activity</h2>
             <span>Live</span>
           </div>
           <div class="agent-list" id="agentList"></div>
@@ -125,7 +133,7 @@
 
         <section class="rail-section">
           <div class="section-title">
-            <h2>Founder Decisions</h2>
+            <h2>Decisions</h2>
             <span id="decisionCount">3 open</span>
           </div>
           <div class="decision-list" id="decisionList"></div>

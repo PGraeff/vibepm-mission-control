@@ -35,6 +35,12 @@
       "items": {
         "$ref": "#/$defs/activity"
       }
+    },
+    "milestones": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/milestone"
+      }
     }
   },
   "$defs": {
@@ -162,6 +168,19 @@
         "detail": { "type": "string" },
         "linkedCardId": { "type": "string" },
         "createdAt": { "type": "string" }
+      }
+    },
+    "milestone": {
+      "type": "object",
+      "required": ["id", "projectId", "title", "outcome", "target", "done", "updatedAt"],
+      "properties": {
+        "id": { "type": "string" },
+        "projectId": { "type": "string" },
+        "title": { "type": "string" },
+        "outcome": { "type": "string" },
+        "target": { "type": "string" },
+        "done": { "type": "boolean" },
+        "updatedAt": { "type": "string" }
       }
     }
   }

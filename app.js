@@ -1,6 +1,12 @@
 const STORAGE_KEY = "vibepm.mission-control.v3";
 const columns = ["Idea Intake", "Shape", "Build Watch", "Launch Ready"];
 const statuses = ["Signal", "Draft", "Spec", "Active", "Review", "Guard", "Ship", "Blocked"];
+const columnLabels = {
+  "Idea Intake": "Ideas",
+  Shape: "Shape",
+  "Build Watch": "Building",
+  "Launch Ready": "Ready",
+};
 
 const seedState = {
   version: 3,
@@ -31,6 +37,24 @@ const seedState = {
       linkedCardId: "release-checklist",
       createdAt: new Date().toISOString(),
     },
+  ],
+  milestones: [
+    createMilestone({
+      id: "milestone-first-dogfood",
+      projectId: "project-vibepm",
+      title: "First useful dogfood loop",
+      outcome: "Select a project, see useful work, create a Codex task, and track it to done.",
+      target: "This week",
+      done: false,
+    }),
+    createMilestone({
+      id: "milestone-github-loop",
+      projectId: "project-vibepm",
+      title: "GitHub loop feels simple",
+      outcome: "A new vibe coder can understand issues, project work, and launch blockers without knowing GitHub jargon.",
+      target: "Next",
+      done: false,
+    }),
   ],
   cards: [
     createSeedCard({
@@ -222,7 +246,7 @@ const seedState = {
 
 let state = loadState();
 let activeCardId = null;
-let currentView = "Mission Control";
+let currentView = "Project Overview";
 let selectedProjectId = localStorage.getItem("vibepm.selectedProjectId") || "all";
 
 const viewRoot = document.querySelector("#viewRoot");
@@ -276,6 +300,18 @@ function createSeedCard(card) {
     ],
     updatedAt: new Date().toISOString(),
     ...card,
+  };
+}
+
+function createMilestone(milestone) {
+  return {
+    id: milestone.id || `milestone-${Date.now()}`,
+    projectId: milestone.projectId || "project-vibepm",
+    title: milestone.title || "New milestone",
+    outcome: milestone.outcome || "Describe what should be true when this is done.",
+    target: milestone.target || "Soon",
+    done: Boolean(milestone.done),
+    updatedAt: milestone.updatedAt || new Date().toISOString(),
   };
 }
 
@@ -371,6 +407,7 @@ function normalizeState(rawState) {
   next.cards = (rawState.cards || []).map(normalizeCard);
   next.projects = rawState.projects || seedState.projects;
   next.activity = rawState.activity || seedState.activity;
+  next.milestones = (rawState.milestones || seedState.milestones).map((milestone) => createMilestone(milestone));
   next.backend = rawState.backend || seedState.backend;
   return next;
 }
@@ -433,13 +470,84 @@ function renderCurrentView() {
   pageSubtitle.textContent = meta.subtitle;
   topbarActions.classList.toggle("compact-actions", currentView !== "Mission Control");
 
+  if (currentView === "Project Overview") renderProjectOverview();
   if (currentView === "Mission Control") renderBoard();
   if (currentView === "Roadmap") renderRoadmap();
+  if (currentView === "Milestones") renderMilestones();
   if (currentView === "Idea Inbox") renderIdeaInbox();
   if (currentView === "Agent Runs") renderAgentRuns();
   if (currentView === "User Signals") renderUserSignals();
   if (currentView === "Docs + PRDs") renderDocs();
   if (currentView === "Launches") renderLaunches();
+}
+
+function renderProjectOverview() {
+  const cards = scopedProjectCards();
+  const project = selectedProjectId === "all" ? null : state.projects.find((item) => item.id === selectedProjectId);
+  const milestones = scopedMilestones();
+  const openWork = cards.filter((card) => !["Ship"].includes(card.status)).length;
+  const ready = cards.filter((card) => card.column === "Launch Ready" || card.status === "Ship").length;
+  const blocked = cards.filter(isBlocked).length;
+  const active = cards.filter((card) => ["Active", "Review", "Guard"].includes(card.status)).slice(0, 5);
+  const nextMilestone = milestones.find((milestone) => !milestone.done);
+
+  viewRoot.className = "view-root page-scroll";
+  viewRoot.innerHTML = `
+    <section class="hero-panel">
+      <div>
+        <p class="eyebrow">For vibe coders</p>
+        <h2>Create and give life to your projects</h2>
+        <p>Keep your ideas, Codex work, GitHub items, and launch steps in one simple place.</p>
+      </div>
+      ${help("This page avoids development jargon. It shows what matters next for the selected project.")}
+    </section>
+    <div class="metric-strip">
+      ${summaryMetric("Things to do", openWork, "Cards that still need attention.")}
+      ${summaryMetric("Being worked on", active.length, "Work currently being handled by you, Codex, or another tool.")}
+      ${summaryMetric("Blocked", blocked, "Items that may stop you from launching or moving forward.")}
+      ${summaryMetric("Ready soon", ready, "Items close to being shared, shipped, or tested.")}
+    </div>
+    <div class="page-grid">
+      <section class="page-panel wide-panel">
+        <div class="section-title">
+          <h2>Next Things To Do</h2>
+          ${help("These are the clearest next actions for the selected project. Open one to see details.")}
+        </div>
+        <div class="simple-list">
+          ${active.map(simpleCardRow).join("") || emptyState("Nothing urgent yet. Add a task or refresh the project.")}
+        </div>
+      </section>
+      <section class="page-panel">
+        <div class="section-title">
+          <h2>Project Goal</h2>
+          ${help("This comes from VIBEPM.md when the project has one.")}
+        </div>
+        <p class="plain-text">${escapeHtml(project?.productGoal || "Add a VIBEPM.md file to explain what this project is trying to become.")}</p>
+      </section>
+      <section class="page-panel">
+        <div class="section-title">
+          <h2>Current Focus</h2>
+          ${help("Tell Codex what matters right now so it creates better cards.")}
+        </div>
+        <p class="plain-text">${escapeHtml(project?.currentFocus || "No focus set yet. Use VIBEPM.md to guide generated work.")}</p>
+      </section>
+      <section class="page-panel wide-panel">
+        <div class="section-title">
+          <h2>Next Milestone</h2>
+          ${help("A milestone is a simple checkpoint. It says what should be true soon.")}
+        </div>
+        ${
+          nextMilestone
+            ? `<button class="milestone-card" type="button" data-view-milestones="true"><strong>${escapeHtml(nextMilestone.title)}</strong><span>${escapeHtml(nextMilestone.outcome)}</span><small>${escapeHtml(nextMilestone.target)}</small></button>`
+            : emptyState("No open milestone. Create one on the Milestones page.")
+        }
+      </section>
+    </div>
+  `;
+  wireOpenRows();
+  document.querySelectorAll("[data-view-milestones]").forEach((button) => {
+    button.addEventListener("click", () => switchView("Milestones"));
+  });
 }
 
 function renderBoard() {
@@ -473,7 +581,7 @@ function renderBoard() {
         <section class="column" aria-labelledby="${slug(column)}-title">
           <div class="column-header">
             <div>
-              <h2 id="${slug(column)}-title">${column}</h2>
+              <h2 id="${slug(column)}-title">${columnLabels[column] || column}</h2>
               <span>${columnSubtitle(column)}</span>
             </div>
             <span class="column-count">${filteredCards.length}</span>
@@ -513,6 +621,46 @@ function renderRoadmap() {
     </div>
   `;
   wireOpenRows();
+}
+
+function renderMilestones() {
+  const milestones = scopedMilestones();
+  viewRoot.className = "view-root page-scroll";
+  viewRoot.innerHTML = `
+    <div class="page-grid">
+      <section class="page-panel wide-panel">
+        <div class="section-title">
+          <h2>Milestones</h2>
+          ${help("Milestones are plain-language checkpoints, not technical tickets. Edit them anytime.")}
+        </div>
+        <div class="milestone-list">
+          ${milestones.map(milestoneRow).join("") || emptyState("No milestones yet. Add one on the right.")}
+        </div>
+      </section>
+      <section class="page-panel">
+        <div class="section-title">
+          <h2>Add Milestone</h2>
+          ${help("Write the result you want, not the technical implementation.")}
+        </div>
+        <form class="quick-form" id="milestoneForm">
+          <label>Name<input id="milestoneTitle" required placeholder="First users can test it" /></label>
+          <label>What should be true?<textarea id="milestoneOutcome" rows="4" required></textarea></label>
+          <label>Target<input id="milestoneTarget" placeholder="This week, next launch, later" /></label>
+          <button class="primary-button" type="submit">Add Milestone</button>
+        </form>
+      </section>
+    </div>
+  `;
+  document.querySelector("#milestoneForm").addEventListener("submit", addMilestone);
+  document.querySelectorAll("[data-toggle-milestone]").forEach((button) => {
+    button.addEventListener("click", () => toggleMilestone(button.dataset.toggleMilestone));
+  });
+  document.querySelectorAll("[data-delete-milestone]").forEach((button) => {
+    button.addEventListener("click", () => deleteMilestone(button.dataset.deleteMilestone));
+  });
+  document.querySelectorAll("[data-edit-milestone]").forEach((input) => {
+    input.addEventListener("change", () => updateMilestone(input.dataset.editMilestone, input.dataset.field, input.value));
+  });
 }
 
 function renderIdeaInbox() {
@@ -736,42 +884,98 @@ function renderCard(card) {
   `;
 }
 
+function simpleCardRow(card) {
+  return `
+    <button class="simple-row" type="button" data-open-card="${escapeHtml(card.id)}">
+      <span>
+        <strong>${escapeHtml(card.title)}</strong>
+        <small>${escapeHtml(card.outcome)}</small>
+      </span>
+      <em>${simpleStatus(card.status)}</em>
+    </button>
+  `;
+}
+
+function milestoneRow(milestone) {
+  return `
+    <article class="milestone-card ${milestone.done ? "done" : ""}">
+      <div class="milestone-head">
+        <label>
+          <input type="checkbox" data-toggle-milestone="${escapeHtml(milestone.id)}" ${milestone.done ? "checked" : ""} />
+          Done
+        </label>
+        <button type="button" data-delete-milestone="${escapeHtml(milestone.id)}">Delete</button>
+      </div>
+      <label>Name<input data-edit-milestone="${escapeHtml(milestone.id)}" data-field="title" value="${escapeHtml(milestone.title)}" /></label>
+      <label>What should be true?<textarea data-edit-milestone="${escapeHtml(milestone.id)}" data-field="outcome" rows="3">${escapeHtml(milestone.outcome)}</textarea></label>
+      <label>Target<input data-edit-milestone="${escapeHtml(milestone.id)}" data-field="target" value="${escapeHtml(milestone.target)}" /></label>
+    </article>
+  `;
+}
+
+function help(text) {
+  return `<span class="help-bubble" tabindex="0" data-help="${escapeHtml(text)}">?</span>`;
+}
+
+function simpleStatus(status) {
+  return {
+    Signal: "Idea",
+    Draft: "Draft",
+    Spec: "Ready to build",
+    Active: "Working",
+    Review: "Check it",
+    Guard: "Blocked",
+    Ship: "Ready",
+    Blocked: "Blocked",
+  }[status] || status;
+}
+
 function viewMeta(view) {
   const metas = {
+    "Project Overview": {
+      eyebrow: "Start here",
+      title: "Overview",
+      subtitle: "A simple view of what matters for this project",
+    },
     "Mission Control": {
-      eyebrow: "Product focus",
-      title: "Mission Control",
-      subtitle: "Beta launch readiness - product execution board",
+      eyebrow: "Work",
+      title: "Work Board",
+      subtitle: "Move ideas from rough thought to ready-to-share",
     },
     Roadmap: {
       eyebrow: "Planning",
-      title: "Roadmap",
-      subtitle: "Prioritized product opportunities from current board data",
+      title: "Plan",
+      subtitle: "A simple list of what looks most important",
+    },
+    Milestones: {
+      eyebrow: "Checkpoints",
+      title: "Milestones",
+      subtitle: "Editable goals for what should be true next",
     },
     "Idea Inbox": {
       eyebrow: "Capture",
-      title: "Idea Inbox",
-      subtitle: "Raw and semi-structured inputs before they become scoped work",
+      title: "Ideas",
+      subtitle: "Save rough thoughts before they disappear",
     },
     "Agent Runs": {
-      eyebrow: "Execution",
-      title: "Agent Runs",
-      subtitle: "Active AI-agent work grouped by card and state",
+      eyebrow: "Codex",
+      title: "Codex Work",
+      subtitle: "See what the AI helper is doing for this project",
     },
     "User Signals": {
-      eyebrow: "Intelligence",
-      title: "User Signals",
-      subtitle: "Ranked signals from users, market notes, and product feedback",
+      eyebrow: "Learning",
+      title: "Feedback",
+      subtitle: "User clues, bug notes, and requests",
     },
     "Docs + PRDs": {
-      eyebrow: "Product docs",
-      title: "Docs + PRDs",
-      subtitle: "PRDs, prompts, assumptions, and card-linked product notes",
+      eyebrow: "Notes",
+      title: "Notes",
+      subtitle: "Prompts, product notes, and useful context",
     },
     Launches: {
-      eyebrow: "Release",
-      title: "Launches",
-      subtitle: "Launch readiness, gates, checks, and ship queue",
+      eyebrow: "Share",
+      title: "Launch",
+      subtitle: "What needs to be true before you show people",
     },
   };
   return metas[view] || metas["Mission Control"];
@@ -814,6 +1018,11 @@ function scopedProjects() {
 function scopedActivity() {
   if (selectedProjectId === "all") return state.activity;
   return state.activity.filter((item) => item.projectId === selectedProjectId);
+}
+
+function scopedMilestones() {
+  if (selectedProjectId === "all") return state.milestones || [];
+  return (state.milestones || []).filter((milestone) => milestone.projectId === selectedProjectId);
 }
 
 function summaryMetric(label, value) {
@@ -1496,6 +1705,44 @@ function captureQuickIdea(event) {
   openDetail(id);
 }
 
+function addMilestone(event) {
+  event.preventDefault();
+  state.milestones = [
+    createMilestone({
+      projectId: selectedProjectId === "all" ? state.projects[0]?.id || "project-vibepm" : selectedProjectId,
+      title: document.querySelector("#milestoneTitle").value.trim(),
+      outcome: document.querySelector("#milestoneOutcome").value.trim(),
+      target: document.querySelector("#milestoneTarget").value.trim() || "Soon",
+    }),
+    ...(state.milestones || []),
+  ];
+  saveState();
+  renderApp();
+}
+
+function toggleMilestone(id) {
+  const milestone = state.milestones.find((item) => item.id === id);
+  if (!milestone) return;
+  milestone.done = !milestone.done;
+  milestone.updatedAt = new Date().toISOString();
+  saveState();
+  renderApp();
+}
+
+function updateMilestone(id, field, value) {
+  const milestone = state.milestones.find((item) => item.id === id);
+  if (!milestone || !["title", "outcome", "target"].includes(field)) return;
+  milestone[field] = value.trim();
+  milestone.updatedAt = new Date().toISOString();
+  saveState();
+}
+
+function deleteMilestone(id) {
+  state.milestones = state.milestones.filter((item) => item.id !== id);
+  saveState();
+  renderApp();
+}
+
 function resetBoard() {
   state = structuredClone(seedState);
   activeCardId = null;
@@ -1591,10 +1838,10 @@ function riskLevel(risk) {
 
 function columnSubtitle(column) {
   return {
-    "Idea Intake": "Raw signals",
-    Shape: "Clarify intent",
-    "Build Watch": "Agent execution",
-    "Launch Ready": "Ship queue",
+    "Idea Intake": "rough ideas",
+    Shape: "make it clear",
+    "Build Watch": "being built",
+    "Launch Ready": "almost ready",
   }[column];
 }
 
