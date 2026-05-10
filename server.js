@@ -520,6 +520,8 @@ async function createCodexWorkItem(state, body) {
       done: false,
     })),
   });
+  card.generated = false;
+  card.source = "Codex";
 
   let githubIssueUrl = "";
   if (body.createGithubIssue && project.github?.repo) {
