@@ -65,6 +65,7 @@
       ],
       "properties": {
         "id": { "type": "string" },
+        "projectId": { "type": "string" },
         "generated": { "type": "boolean" },
         "column": {
           "type": "string",

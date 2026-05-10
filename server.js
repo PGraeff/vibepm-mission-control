@@ -56,6 +56,14 @@ createServer(async (req, res) => {
       return sendJson(res, merged);
     }
 
+    if (url.pathname === "/api/codex/work-items" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      const state = await loadState();
+      const result = await createCodexWorkItem(state, body);
+      await saveState(result.state);
+      return sendJson(res, { ok: true, card: result.card, githubIssueUrl: result.githubIssueUrl });
+    }
+
     return serveStatic(url.pathname, res);
   } catch (error) {
     console.error(error);
@@ -173,6 +181,7 @@ async function inspectProject(dir) {
   if (dirtyFiles.length) {
     cards.push(makeGeneratedCard({
       id: `generated-${id}-dirty`,
+      projectId: id,
       column: "Build Watch",
       title: `${name}: review current local work`,
       outcome: playbook.currentFocus
@@ -196,6 +205,7 @@ async function inspectProject(dir) {
   if (todoFindings.length) {
     cards.push(makeGeneratedCard({
       id: `generated-${id}-todos`,
+      projectId: id,
       column: "Idea Intake",
       title: `${name}: triage code notes`,
       outcome: playbook.currentFocus
@@ -213,6 +223,7 @@ async function inspectProject(dir) {
   if (!playbook.hasPlaybook) {
     cards.push(makeGeneratedCard({
       id: `generated-${id}-playbook`,
+      projectId: id,
       column: "Idea Intake",
       title: `${name}: add project operating brief`,
       outcome: "Add VIBEPM.md so Codex knows the product goal, current focus, useful commands, launch checks, and what to ignore.",
@@ -228,6 +239,7 @@ async function inspectProject(dir) {
   if (!(await exists(path.join(dir, "README.md")))) {
     cards.push(makeGeneratedCard({
       id: `generated-${id}-readme`,
+      projectId: id,
       column: "Launch Ready",
       title: `${name}: README missing`,
       outcome: "Project may be hard to hand off or launch without setup documentation.",
@@ -243,6 +255,7 @@ async function inspectProject(dir) {
   for (const issue of github.issues.slice(0, 5)) {
     cards.push(makeGeneratedCard({
       id: `generated-${id}-gh-issue-${issue.number}`,
+      projectId: id,
       column: "Idea Intake",
       title: `${name}: GitHub issue #${issue.number}`,
       outcome: issue.title,
@@ -258,6 +271,7 @@ async function inspectProject(dir) {
   for (const pr of github.pullRequests.slice(0, 5)) {
     cards.push(makeGeneratedCard({
       id: `generated-${id}-gh-pr-${pr.number}`,
+      projectId: id,
       column: "Build Watch",
       title: `${name}: PR #${pr.number}`,
       outcome: pr.title,
@@ -276,6 +290,7 @@ async function inspectProject(dir) {
     if (failing.length) {
       cards.push(makeGeneratedCard({
         id: `generated-${id}-gh-checks`,
+        projectId: id,
         column: "Build Watch",
         title: `${name}: failing GitHub checks`,
         outcome: `${failing.length} GitHub check runs need attention on ${branch || "current branch"}.`,
@@ -316,6 +331,7 @@ async function inspectProject(dir) {
 function makeGeneratedCard(overrides) {
   return {
     id: overrides.id,
+    projectId: overrides.projectId || "",
     generated: true,
     column: overrides.column,
     order: 900,
@@ -478,6 +494,78 @@ function mergeScannedState(state, scanned) {
     activity: [...scanned.activity, ...manualActivity].slice(0, 100),
     cards: [...manualCards, ...generatedCards],
   };
+}
+
+async function createCodexWorkItem(state, body) {
+  const project = state.projects.find((item) => item.id === body.projectId) || state.projects[0];
+  if (!project) throw new Error("No project available for Codex work item");
+
+  const card = makeGeneratedCard({
+    id: body.id || `codex-${slug(project.name)}-${Date.now()}`,
+    projectId: project.id,
+    column: body.column || "Build Watch",
+    title: body.title || "Codex work item",
+    outcome: body.outcome || body.detail || "Codex created a work item.",
+    owner: body.owner || "Codex",
+    status: body.status || "Active",
+    impact: body.impact || 6,
+    confidence: body.confidence || 7,
+    risk: body.risk || 5,
+    context: ["Codex", "Local agent", ...(body.context || [])],
+    gate: body.gate || "Track Codex work",
+    agentRuns: [body.detail || body.outcome || "Codex work item created."],
+    checks: (body.checks || ["Review implementation", "Verify behavior"]).map((label, index) => ({
+      id: `codex-check-${Date.now()}-${index}`,
+      label,
+      done: false,
+    })),
+  });
+
+  let githubIssueUrl = "";
+  if (body.createGithubIssue && project.github?.repo) {
+    githubIssueUrl = await createGithubIssue(project.github.repo, card);
+    if (githubIssueUrl) {
+      card.context.push(githubIssueUrl);
+    }
+  }
+
+  state.cards = [...(state.cards || []).filter((item) => item.id !== card.id), card];
+  state.activity = [
+    {
+      id: `activity-${card.id}`,
+      projectId: project.id,
+      source: "Codex",
+      status: card.status,
+      title: card.title,
+      detail: card.outcome,
+      linkedCardId: card.id,
+      createdAt: new Date().toISOString(),
+    },
+    ...(state.activity || []),
+  ].slice(0, 100);
+
+  return { state, card, githubIssueUrl };
+}
+
+async function createGithubIssue(repo, card) {
+  const body = [
+    card.outcome,
+    "",
+    "Created by VibePM local Codex work item API.",
+    "",
+    "Checks:",
+    ...card.checks.map((check) => `- [ ] ${check.label}`),
+  ].join("\n");
+  return new Promise((resolve) => {
+    execFile(
+      "gh",
+      ["issue", "create", "--repo", repo, "--title", card.title, "--body", body],
+      { timeout: 10000 },
+      (error, stdout) => {
+        resolve(error ? "" : stdout.trim());
+      },
+    );
+  });
 }
 
 async function findTodos(dir) {

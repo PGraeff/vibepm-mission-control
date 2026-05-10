@@ -31,6 +31,8 @@ A dark-mode static prototype for the VibePM product-management mission control U
 - `Sync Projects` action for generating real cards/activity from current projects
 - Optional per-project `VIBEPM.md` playbook so generated cards reflect product intent instead of raw Git noise
 - GitHub enrichment through authenticated `gh`: open issues, open PRs, review state, recent branch checks, and generated cards for GitHub work
+- Project selector that scopes board/pages/activity to one scanned project at a time
+- Codex work-item API for creating project-linked cards and optional GitHub issues
 
 ## Run locally
 
@@ -61,3 +63,17 @@ Copy `docs/VIBEPM_TEMPLATE.md` into a project as `VIBEPM.md`, then fill in produ
 ## GitHub Connection
 
 The local scanner uses each repo's `origin` remote plus your authenticated `gh` CLI session. Run `gh auth status` if GitHub data does not appear after `Sync Projects`.
+
+## Codex Work Item API
+
+Agents can create app-visible work items by posting to the local server:
+
+```bash
+curl -X POST http://127.0.0.1:5174/api/codex/work-items \
+  -H "Content-Type: application/json" \
+  -d "{\"projectId\":\"project-new-project-4\",\"title\":\"Implement settings view\",\"outcome\":\"Add scoped settings for the active project\",\"checks\":[\"UI renders\",\"State persists\"]}"
+```
+
+Set `"createGithubIssue": true` to also create a GitHub issue in the selected project's connected repo.
+
+See `docs/CODEX_INTEGRATION.md` and `tools/codex-work-item.ps1` for a reusable helper.

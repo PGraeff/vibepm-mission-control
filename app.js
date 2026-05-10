@@ -223,6 +223,7 @@ const seedState = {
 let state = loadState();
 let activeCardId = null;
 let currentView = "Mission Control";
+let selectedProjectId = localStorage.getItem("vibepm.selectedProjectId") || "all";
 
 const viewRoot = document.querySelector("#viewRoot");
 const pageEyebrow = document.querySelector("#pageEyebrow");
@@ -236,6 +237,7 @@ const exportButton = document.querySelector("#exportButton");
 const importButton = document.querySelector("#importButton");
 const importInput = document.querySelector("#importInput");
 const syncProjectsButton = document.querySelector("#syncProjectsButton");
+const projectSelector = document.querySelector("#projectSelector");
 const dialog = document.querySelector("#cardDialog");
 const cardForm = document.querySelector("#cardForm");
 const detailDrawer = document.querySelector("#detailDrawer");
@@ -254,6 +256,7 @@ function createSeedCard(card) {
   };
 
   return {
+    projectId: card.projectId || "project-vibepm",
     prd: "",
     prdFields,
     prompt: "",
@@ -374,6 +377,7 @@ function normalizeState(rawState) {
 
 function normalizeCard(card) {
   const normalized = createSeedCard(card);
+  normalized.projectId = card.projectId || normalized.projectId || "project-vibepm";
   normalized.generated = Boolean(card.generated);
   normalized.prd = card.prd || normalized.prd;
   normalized.prdFields = {
@@ -394,11 +398,32 @@ function normalizeCard(card) {
 }
 
 function renderApp() {
+  ensureSelectedProject();
+  renderProjectSelector();
   renderCurrentView();
   renderRail();
   if (activeCardId) {
     populateDetail(activeCardId);
   }
+}
+
+function ensureSelectedProject() {
+  if (selectedProjectId === "all") return;
+  if (!state.projects.some((project) => project.id === selectedProjectId)) {
+    selectedProjectId = state.projects[0]?.id || "all";
+    localStorage.setItem("vibepm.selectedProjectId", selectedProjectId);
+  }
+}
+
+function renderProjectSelector() {
+  const options = [
+    `<option value="all"${selectedProjectId === "all" ? " selected" : ""}>All projects</option>`,
+    ...state.projects.map(
+      (project) =>
+        `<option value="${escapeHtml(project.id)}"${project.id === selectedProjectId ? " selected" : ""}>${escapeHtml(project.name)}</option>`,
+    ),
+  ];
+  projectSelector.innerHTML = options.join("");
 }
 
 function renderCurrentView() {
@@ -467,13 +492,14 @@ function renderBoard() {
 
 function renderRoadmap() {
   const cards = filteredCards().sort((a, b) => priorityScore(b) - priorityScore(a));
+  const scopedCards = scopedProjectCards();
   viewRoot.className = "view-root page-scroll";
   viewRoot.innerHTML = `
     <div class="metric-strip">
-      ${summaryMetric("Total cards", state.cards.length)}
-      ${summaryMetric("High priority", state.cards.filter((card) => priorityScore(card) >= 10).length)}
-      ${summaryMetric("Blocked", state.cards.filter(isBlocked).length)}
-      ${summaryMetric("Launch ready", state.cards.filter((card) => card.column === "Launch Ready").length)}
+      ${summaryMetric("Total cards", scopedCards.length)}
+      ${summaryMetric("High priority", scopedCards.filter((card) => priorityScore(card) >= 10).length)}
+      ${summaryMetric("Blocked", scopedCards.filter(isBlocked).length)}
+      ${summaryMetric("Launch ready", scopedCards.filter((card) => card.column === "Launch Ready").length)}
     </div>
     <div class="table-panel">
       <div class="table-row table-head">
@@ -559,7 +585,7 @@ function renderAgentRuns() {
           <span>${state.backend.syncStatus}</span>
         </div>
         <div class="project-list">
-          ${state.projects.map(projectItem).join("")}
+          ${scopedProjects().map(projectItem).join("")}
         </div>
         <form class="quick-form" id="activityForm">
           <label>Activity title<input id="activityTitle" placeholder="Codex is editing launch page" required /></label>
@@ -579,10 +605,10 @@ function renderAgentRuns() {
       <section class="page-panel wide-panel">
         <div class="section-title">
           <h2>Local Activity Timeline</h2>
-          <span>${state.activity.length} events</span>
+          <span>${scopedActivity().length} events</span>
         </div>
         <div class="run-list">
-          ${state.activity.map(activityItem).join("")}
+          ${scopedActivity().map(activityItem).join("")}
         </div>
       </section>
     </div>
@@ -678,7 +704,7 @@ function renderLaunches() {
 }
 
 function getCardsForColumn(column) {
-  const cards = state.cards.filter((card) => card.column === column);
+  const cards = scopedProjectCards().filter((card) => card.column === column);
   if (sortMode.value === "priority") {
     return cards.sort((a, b) => priorityScore(b) - priorityScore(a));
   }
@@ -754,7 +780,7 @@ function viewMeta(view) {
 function filteredCards() {
   const query = searchInput.value.trim().toLowerCase();
   const status = statusFilter.value;
-  return state.cards.filter((card) => {
+  return scopedProjectCards().filter((card) => {
     const matchesStatus = status === "all" || card.status === status;
     const searchable = [
       card.title,
@@ -773,6 +799,21 @@ function filteredCards() {
       .toLowerCase();
     return matchesStatus && searchable.includes(query);
   });
+}
+
+function scopedProjectCards() {
+  if (selectedProjectId === "all") return state.cards;
+  return state.cards.filter((card) => (card.projectId || "project-vibepm") === selectedProjectId);
+}
+
+function scopedProjects() {
+  if (selectedProjectId === "all") return state.projects;
+  return state.projects.filter((project) => project.id === selectedProjectId);
+}
+
+function scopedActivity() {
+  if (selectedProjectId === "all") return state.activity;
+  return state.activity.filter((item) => item.projectId === selectedProjectId);
 }
 
 function summaryMetric(label, value) {
@@ -857,7 +898,7 @@ function activityItem(activity) {
 }
 
 function statusSummary(status) {
-  const count = state.cards.filter((card) => card.status === status).length;
+  const count = scopedProjectCards().filter((card) => card.status === status).length;
   return `
     <div class="stack-row">
       <span>${escapeHtml(status)}</span>
@@ -917,7 +958,7 @@ function wireOpenRows() {
 }
 
 function renderRail() {
-  const cards = state.cards;
+  const cards = scopedProjectCards();
   const blockedCards = cards.filter(isBlocked);
   const activeCards = cards.filter((card) => ["Active", "Review", "Guard"].includes(card.status));
   const shipCards = cards.filter((card) => card.column === "Launch Ready");
@@ -927,7 +968,7 @@ function renderRail() {
   const agentRuns = cards
     .flatMap((card) => card.agentRuns.map((run) => ({ card, run })))
     .slice(0, 5);
-  const activityRuns = state.activity.slice(0, 3);
+  const activityRuns = scopedActivity().slice(0, 3);
   const decisions = cards
     .flatMap((card) => card.decisions.map((decision) => ({ card, decision })))
     .slice(0, 5);
@@ -1408,6 +1449,7 @@ function createCardFromForm() {
   const id = `card-${Date.now()}`;
   const newCard = createSeedCard({
     id,
+    projectId: selectedProjectId === "all" ? state.projects[0]?.id || "project-vibepm" : selectedProjectId,
     column,
     order: nextOrder(column),
     title: document.querySelector("#cardTitle").value.trim(),
@@ -1434,6 +1476,7 @@ function captureQuickIdea(event) {
   state.cards.push(
     createSeedCard({
       id,
+      projectId: selectedProjectId === "all" ? state.projects[0]?.id || "project-vibepm" : selectedProjectId,
       column: "Idea Intake",
       order: nextOrder("Idea Intake"),
       title,
@@ -1522,7 +1565,7 @@ function findCard(cardId) {
 }
 
 function nextOrder(column) {
-  const orders = state.cards.filter((card) => card.column === column).map((card) => card.order || 0);
+  const orders = scopedProjectCards().filter((card) => card.column === column).map((card) => card.order || 0);
   return orders.length ? Math.max(...orders) + 10 : 10;
 }
 
@@ -1657,6 +1700,12 @@ document.querySelectorAll(".detail-tab").forEach((tab) => {
 searchInput.addEventListener("input", renderCurrentView);
 statusFilter.addEventListener("change", renderCurrentView);
 sortMode.addEventListener("change", renderCurrentView);
+projectSelector.addEventListener("change", () => {
+  selectedProjectId = projectSelector.value;
+  localStorage.setItem("vibepm.selectedProjectId", selectedProjectId);
+  closeDetail();
+  renderApp();
+});
 
 document.querySelectorAll(".nav-item").forEach((item) => {
   item.addEventListener("click", () => {
