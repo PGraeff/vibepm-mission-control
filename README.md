@@ -44,6 +44,10 @@ npm run scan
 
 Or use the `Sync` button in the app.
 
+## How Sprints Work
+
+Sprints are short focus windows for each project. VibePM creates a current sprint per scanned project and fills it with the near-term tasks it thinks should be handled soon. New accepted Inbox tasks are added to the active sprint for their project when one exists.
+
 ## Teach VibePM About A Project
 
 Copy `docs/VIBEPM_TEMPLATE.md` into a project as `VIBEPM.md`, then fill in product goal, current focus, useful commands, launch checklist, and what Codex should ignore.

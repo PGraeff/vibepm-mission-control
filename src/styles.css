@@ -331,9 +331,37 @@ p {
 }
 
 .content {
+  display: grid;
+  align-content: start;
+  gap: 14px;
   min-height: 0;
   padding: 16px 20px 28px;
   overflow: auto;
+}
+
+.workspace-brief {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(110px, 150px)) minmax(260px, 1fr);
+  gap: 10px;
+}
+
+.sprint-brief {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(110px, 140px)) minmax(220px, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.start-guide {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--soft-line);
+  border-radius: 8px;
+  background: #0b1118;
+  color: #bdc9d8;
+  font-size: 13px;
 }
 
 .task-list {
@@ -506,7 +534,7 @@ p {
 
 .inbox-card {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .inbox-card p,
@@ -520,6 +548,40 @@ p {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
+}
+
+.project-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.project-actions span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compact-task-list {
+  display: grid;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.compact-task-list button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 36px;
+  padding: 7px 9px;
+  text-align: left;
+}
+
+.compact-task-list span:not(.chip) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .metric {
@@ -575,6 +637,18 @@ p {
   background: #0b1118;
 }
 
+.file-details {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.file-details summary {
+  width: fit-content;
+  color: #c9d5e4;
+  cursor: pointer;
+  font-weight: 800;
+}
+
 .empty-state,
 .loading {
   display: grid;
@@ -617,6 +691,13 @@ p {
 .drawer-actions {
   justify-content: flex-start;
   flex-wrap: wrap;
+}
+
+.drawer-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
 }
 
 .drawer-actions select {
@@ -673,8 +754,30 @@ p {
   text-decoration: none;
 }
 
+.link-list span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.mini-empty {
+  padding: 10px;
+  border: 1px dashed #2b3545;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 @media (max-width: 1180px) {
   .topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-brief {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .sprint-brief {
     grid-template-columns: 1fr;
   }
 

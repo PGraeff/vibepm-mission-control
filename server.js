@@ -161,7 +161,7 @@ function normalizeTask(task, projects, activity) {
   return {
     id: task.id,
     projectId: task.projectId || projects[0]?.id || "",
-    title: task.title || "Untitled task",
+    title: cleanTaskTitle(task.title || "Untitled task"),
     description: task.description || task.outcome || "",
     status: normalizeTaskStatus(task.status),
     priority: normalizePriority(task.priority || task.impact, task.risk),
@@ -184,7 +184,7 @@ function taskFromCard(card, projects, activity) {
     {
       id: card.id,
       projectId: card.projectId || projects[0]?.id || "",
-      title: card.title,
+      title: cleanTaskTitle(card.title),
       description: card.outcome || card.prd || "",
       status: card.status,
       priority: normalizePriority(card.impact, card.risk),
@@ -315,20 +315,32 @@ function isGithubIssueCard(card) {
 
 function normalizeTaskStatus(status) {
   const map = {
-    Signal: "Todo",
-    Draft: "Todo",
-    Spec: "Todo",
-    Active: "Doing",
+    Signal: "Next",
+    Draft: "Next",
+    Spec: "Next",
+    Active: "In progress",
     Review: "Needs Review",
     Guard: "Blocked",
     Ship: "Done",
     Blocked: "Blocked",
-    Todo: "Todo",
-    Doing: "Doing",
+    Todo: "Next",
+    Doing: "In progress",
+    Next: "Next",
+    "In progress": "In progress",
     "Needs Review": "Needs Review",
     Done: "Done",
   };
-  return map[status] || "Todo";
+  return map[status] || "Next";
+}
+
+function cleanTaskTitle(title = "") {
+  const withoutProject = title.replace(/^.+?:\s+/, "");
+  return withoutProject
+    .replace(/^add project operating brief$/i, "Add project brief")
+    .replace(/^review current local work$/i, "Review local changes")
+    .replace(/^README missing$/i, "Add README")
+    .replace(/^triage code notes$/i, "Review code notes")
+    .trim();
 }
 
 function normalizePriority(priority, risk = 5) {

@@ -71,6 +71,21 @@
                                   ],
                         "createdAt":  "2026-05-10T20:15:46.3775992Z",
                         "updatedAt":  "2026-05-10T20:15:46.3775992Z"
+                    },
+                    {
+                        "id":  "polish-linear-workflow-ui",
+                        "projectId":  "project-new-project-4",
+                        "status":  "Complete",
+                        "title":  "Polish Linear workflow UI",
+                        "detail":  "Added clearer filters, friendlier task/status names, My Tasks health metrics, denser Inbox actions, Codex badge, drawer metadata and empty states, compact project previews, expandable Codex file lists, and clearer sprint behavior.",
+                        "linkedCardId":  "",
+                        "files":  [
+                                      "src/main.tsx",
+                                      "src/styles.css",
+                                      "server.js"
+                                  ],
+                        "createdAt":  "2026-05-10T20:32:32.9287114Z",
+                        "updatedAt":  "2026-05-10T20:32:32.9287114Z"
                     }
                 ],
     "issues":  [

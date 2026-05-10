@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import "./styles.css";
 
-type Status = "Todo" | "Doing" | "Needs Review" | "Blocked" | "Done";
+type Status = "Next" | "In progress" | "Needs Review" | "Blocked" | "Done";
 type Source = "Manual" | "Codex" | "GitHub" | "Project Scan" | "Launch";
 
 type Project = {
@@ -134,7 +134,7 @@ type AppState = {
 
 type ViewKey = "my" | "inbox" | "projects" | "sprints" | "views" | "codex" | "launch" | "settings";
 
-const statusOrder: Status[] = ["Todo", "Doing", "Needs Review", "Blocked", "Done"];
+const statusOrder: Status[] = ["Next", "In progress", "Needs Review", "Blocked", "Done"];
 const views: Array<{ key: ViewKey; label: string; icon: React.ElementType }> = [
   { key: "my", label: "My Tasks", icon: LayoutList },
   { key: "inbox", label: "Inbox", icon: Inbox },
@@ -224,7 +224,7 @@ function App() {
       projectId: item.projectId,
       title: item.suggestedTask.title || item.title,
       description: item.suggestedTask.description || item.body,
-      status: assignee === "Codex" ? "Doing" : "Todo",
+      status: assignee === "Codex" ? "In progress" : "Next",
       priority: item.suggestedTask.priority || "Medium",
       assignee,
       source: item.source,
@@ -275,7 +275,7 @@ function App() {
       projectId,
       title: "New task",
       description: "Describe the outcome you want.",
-      status: "Todo",
+      status: "Next",
       priority: "Medium",
       assignee: "Me",
       source: "Manual",
@@ -303,6 +303,7 @@ function App() {
   const selectedProject = selectedProjectId === "all" ? null : appState.projects.find((project) => project.id === selectedProjectId);
   const newInboxCount = appState.inbox.filter((item) => item.state === "New").length;
   const blockedCount = appState.tasks.filter((task) => task.status === "Blocked").length;
+  const activeCodexCount = appState.tasks.filter((task) => task.assignee === "Codex" && task.status !== "Done").length;
 
   return (
     <div className="app-shell">
@@ -330,7 +331,14 @@ function App() {
         <nav className="nav-list">
           {views.map((item) => {
             const Icon = item.icon;
-            const count = item.key === "inbox" ? newInboxCount : item.key === "launch" ? readyToLaunch(appState.tasks).length : 0;
+            const count =
+              item.key === "inbox"
+                ? newInboxCount
+                : item.key === "launch"
+                  ? readyToLaunch(appState.tasks).length
+                  : item.key === "codex"
+                    ? activeCodexCount
+                    : 0;
             return (
               <button
                 key={item.key}
@@ -375,18 +383,20 @@ function App() {
 
         <div className="filters">
           <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as Status | "All")}>
-            <option>All</option>
+            <option value="All">Any status</option>
             {statusOrder.map((status) => (
-              <option key={status}>{status}</option>
+              <option key={status} value={status}>
+                {status}
+              </option>
             ))}
           </select>
           <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value as Source | "All")}>
-            <option>All</option>
-            <option>Manual</option>
-            <option>Codex</option>
-            <option>GitHub</option>
-            <option>Project Scan</option>
-            <option>Launch</option>
+            <option value="All">Any source</option>
+            <option value="Manual">Manual</option>
+            <option value="Codex">Codex</option>
+            <option value="GitHub">GitHub</option>
+            <option value="Project Scan">Project Scan</option>
+            <option value="Launch">Launch</option>
           </select>
           <span>{visibleTasks.length} tasks</span>
           {blockedCount ? <span className="danger">{blockedCount} blocked</span> : <span className="ok">No blockers</span>}
@@ -426,7 +436,12 @@ function App() {
   function renderView() {
     if (view === "my") {
       const myTasks = visibleTasks.filter((task) => task.status !== "Done");
-      return <TaskList tasks={myTasks} projects={appState.projects} onOpen={setSelectedTaskId} empty="No active tasks. Pull something from Inbox or create a task." />;
+      return (
+        <>
+          <WorkspaceBrief tasks={visibleTasks} inboxCount={newInboxCount} />
+          <TaskList tasks={myTasks} projects={appState.projects} onOpen={setSelectedTaskId} empty="No active tasks. Pull something from Inbox or create a task." />
+        </>
+      );
     }
 
     if (view === "inbox") {
@@ -498,6 +513,21 @@ function TaskList({
   );
 }
 
+function WorkspaceBrief({ tasks, inboxCount }: { tasks: Task[]; inboxCount: number }) {
+  const blocked = tasks.filter((task) => task.status === "Blocked").length;
+  return (
+    <section className="workspace-brief">
+      <Metric label="Tasks" value={tasks.length} />
+      <Metric label="Inbox" value={inboxCount} />
+      <Metric label="Blocked" value={blocked} />
+      <div className="start-guide">
+        <Sparkles size={17} />
+        <span>Start in Inbox, accept useful work, assign some to Codex, then track it here.</span>
+      </div>
+    </section>
+  );
+}
+
 function TaskRow({ task, project, onOpen }: { task: Task; project?: Project; onOpen: (id: string) => void }) {
   return (
     <button className="task-row" type="button" onClick={() => onOpen(task.id)}>
@@ -542,10 +572,10 @@ function InboxView({
           <div className="label-row">{item.labels.map((label) => <Chip key={label}>{label}</Chip>)}</div>
           <div className="actions">
             <button className="primary" type="button" onClick={() => onAccept(item, "Me")}>
-              Accept as Task
+              Accept
             </button>
             <button className="secondary" type="button" onClick={() => onAccept(item, "Codex")}>
-              Assign to Codex
+              Send to Codex
             </button>
             {item.links[0] ? (
               <a className="ghost" href={item.links[0]} target="_blank" rel="noreferrer">
@@ -596,13 +626,31 @@ function ProjectsView({
               <span>{project.github?.repo || project.repo || "No GitHub repo connected"}</span>
               <span>{project.hasPlaybook ? "Brief connected" : "Needs VIBEPM.md"}</span>
             </div>
-            <button className="secondary" type="button" onClick={() => onSelectProject(project.id)}>
-              Focus Project
-            </button>
-            <TaskList tasks={projectTasks.slice(0, 3)} projects={[project]} onOpen={onOpenTask} empty="No tasks yet." />
+            <div className="project-actions">
+              <button className="secondary" type="button" onClick={() => onSelectProject(project.id)}>
+                Focus Project
+              </button>
+              <span>{projectTasks.length ? `${projectTasks.length} total tasks` : "No tasks yet"}</span>
+            </div>
+            <CompactTaskPreview tasks={projectTasks.slice(0, 2)} onOpen={onOpenTask} />
           </article>
         );
       })}
+    </div>
+  );
+}
+
+function CompactTaskPreview({ tasks, onOpen }: { tasks: Task[]; onOpen: (id: string) => void }) {
+  if (!tasks.length) return null;
+  return (
+    <div className="compact-task-list">
+      {tasks.map((task) => (
+        <button key={task.id} type="button" onClick={() => onOpen(task.id)}>
+          <StatusIcon status={task.status} />
+          <span>{task.title}</span>
+          <Chip tone={task.status === "Blocked" ? "red" : "default"}>{task.status}</Chip>
+        </button>
+      ))}
     </div>
   );
 }
@@ -622,18 +670,32 @@ function SprintsView({
   if (!active.length) return <EmptyState title="No active sprint yet. New tasks still work without one." icon={Timer} />;
   return (
     <div className="sprint-grid">
-      {active.map((sprint) => (
-        <section className="panel" key={sprint.id}>
-          <div className="section-title">
-            <div>
-              <h2>{sprint.name}</h2>
-              <p>{projects.find((project) => project.id === sprint.projectId)?.name || "Project"}</p>
+      {active.map((sprint) => {
+        const sprintTasks = tasks.filter((task) => task.sprintId === sprint.id || sprint.taskIds.includes(task.id));
+        const done = sprintTasks.filter((task) => task.status === "Done").length;
+        return (
+          <section className="panel" key={sprint.id}>
+            <div className="section-title">
+              <div>
+                <h2>{sprint.name}</h2>
+                <p>
+                  {projects.find((project) => project.id === sprint.projectId)?.name || "Project"} · {sprint.start} to {sprint.end}
+                </p>
+              </div>
+              <Chip tone="blue">Active</Chip>
             </div>
-            <Chip tone="blue">Active</Chip>
-          </div>
-          <TaskList tasks={tasks.filter((task) => task.sprintId === sprint.id)} projects={projects} onOpen={onOpenTask} empty="No sprint tasks." />
-        </section>
-      ))}
+            <div className="sprint-brief">
+              <Metric label="Tasks" value={sprintTasks.length} />
+              <Metric label="Done" value={done} />
+              <div className="start-guide">
+                <Timer size={17} />
+                <span>Sprints are short focus windows. Keep only the work you want to finish soon here.</span>
+              </div>
+            </div>
+            <TaskList tasks={sprintTasks} projects={projects} onOpen={onOpenTask} empty="No sprint tasks." />
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -692,18 +754,32 @@ function CodexView({ state, onOpenTask }: { state: AppState; onOpenTask: (id: st
         </div>
         <div className="activity-list">
           {(state.codexProgress?.entries || []).map((entry) => (
-            <article className="activity-card" key={entry.id}>
-              <div className="card-head">
-                <strong>{entry.title}</strong>
-                <Chip tone={entry.status === "Complete" ? "green" : "blue"}>{entry.status}</Chip>
-              </div>
-              <p>{entry.detail}</p>
-              <small>{entry.files?.join(", ")}</small>
-            </article>
+            <CodexLogItem key={entry.id} entry={entry} />
           ))}
         </div>
       </section>
     </div>
+  );
+}
+
+function CodexLogItem({ entry }: { entry: NonNullable<CodexProgress["entries"]>[number] }) {
+  const files = entry.files || [];
+  return (
+    <article className="activity-card">
+      <div className="card-head">
+        <strong>{entry.title}</strong>
+        <Chip tone={entry.status === "Complete" ? "green" : "blue"}>{entry.status}</Chip>
+      </div>
+      <p>{entry.detail}</p>
+      {files.length ? (
+        <details className="file-details">
+          <summary>{files.length} files changed</summary>
+          <small>{files.join(", ")}</small>
+        </details>
+      ) : (
+        <small>No files recorded.</small>
+      )}
+    </article>
   );
 }
 
@@ -790,6 +866,7 @@ function TaskDrawer({
 }) {
   const githubIssue = task.links.find((link) => link.includes("github.com") && link.includes("/issues/"));
   const doneChecks = task.checks.filter((check) => check.done).length;
+  const activityItems = [...task.activity, ...activity].slice(0, 8);
   return (
     <aside className="drawer">
       <div className="drawer-head">
@@ -818,6 +895,17 @@ function TaskDrawer({
             Resolve Issue
           </button>
         ) : null}
+        {task.assignee !== "Codex" ? (
+          <button className="secondary" type="button" onClick={() => onUpdate({ assignee: "Codex", status: "In progress" })}>
+            Send to Codex
+          </button>
+        ) : null}
+      </div>
+
+      <div className="drawer-meta">
+        <Chip tone={sourceTone(task.source)}>{task.source}</Chip>
+        <Chip tone={priorityTone(task.priority)}>{task.priority}</Chip>
+        <Chip>{project?.name || "Project"}</Chip>
       </div>
 
       <section>
@@ -857,7 +945,7 @@ function TaskDrawer({
               </a>
             ))
           ) : (
-            <span>No links yet.</span>
+            <span>No links yet. Add a GitHub issue or useful project reference when this task has one.</span>
           )}
         </div>
       </section>
@@ -865,12 +953,16 @@ function TaskDrawer({
       <section className="drawer-block">
         <h3>Activity</h3>
         <div className="activity-list">
-          {[...task.activity, ...activity].slice(0, 8).map((item) => (
-            <article className="activity-card" key={item.id}>
-              <strong>{item.action || item.status || item.source || item.actor}</strong>
-              <p>{item.detail || item.title}</p>
-            </article>
-          ))}
+          {activityItems.length ? (
+            activityItems.map((item) => (
+              <article className="activity-card" key={item.id}>
+                <strong>{item.action || item.status || item.source || item.actor}</strong>
+                <p>{item.detail || item.title}</p>
+              </article>
+            ))
+          ) : (
+            <div className="mini-empty">No activity yet. Changes, Codex work, and GitHub actions will appear here.</div>
+          )}
         </div>
       </section>
     </aside>
@@ -879,7 +971,7 @@ function TaskDrawer({
 
 function StatusIcon({ status }: { status: Status }) {
   if (status === "Done") return <CheckCircle2 className="status done" size={18} />;
-  if (status === "Doing") return <PlayCircle className="status doing" size={18} />;
+  if (status === "In progress") return <PlayCircle className="status doing" size={18} />;
   if (status === "Needs Review") return <Circle className="status review" size={18} />;
   if (status === "Blocked") return <Archive className="status blocked" size={18} />;
   return <Circle className="status todo" size={18} />;
