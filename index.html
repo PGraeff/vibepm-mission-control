@@ -92,8 +92,8 @@
             </select>
             <select id="sortMode" aria-label="Sort cards">
               <option value="manual">Manual order</option>
-              <option value="priority">Priority score</option>
-              <option value="risk">Highest risk</option>
+              <option value="priority">Biggest impact</option>
+              <option value="risk">Most blocked</option>
             </select>
             <button id="exportButton" class="secondary-button" type="button">Export</button>
             <button id="importButton" class="secondary-button" type="button">Import</button>
@@ -325,6 +325,7 @@
         <div class="dialog-actions">
           <button class="secondary-button" id="deleteCardButton" type="button">Delete</button>
           <div>
+            <button class="secondary-button" id="resolveIssueButton" type="button" hidden>Resolve Issue</button>
             <button class="secondary-button" id="resetBoardButton" type="button">Reset Board</button>
             <button class="primary-button" type="submit">Save Changes</button>
           </div>

@@ -407,6 +407,7 @@ function normalizeState(rawState) {
   next.cards = (rawState.cards || []).map(normalizeCard);
   next.projects = rawState.projects || seedState.projects;
   next.activity = rawState.activity || seedState.activity;
+  next.codexProgress = rawState.codexProgress || { version: 1, entries: [], issues: [] };
   next.milestones = (rawState.milestones || seedState.milestones).map((milestone) => createMilestone(milestone));
   next.backend = rawState.backend || seedState.backend;
   return next;
@@ -619,7 +620,7 @@ function renderRoadmap() {
   viewRoot.innerHTML = `
     <div class="metric-strip">
       ${summaryMetric("Total cards", scopedCards.length)}
-      ${summaryMetric("High priority", scopedCards.filter((card) => priorityScore(card) >= 10).length)}
+      ${summaryMetric("High impact", scopedCards.filter((card) => priorityScore(card) >= 10).length)}
       ${summaryMetric("Blocked", scopedCards.filter(isBlocked).length)}
       ${summaryMetric("Launch ready", scopedCards.filter((card) => card.column === "Launch Ready").length)}
     </div>
@@ -628,7 +629,7 @@ function renderRoadmap() {
         <span>Opportunity</span>
         <span>Stage</span>
         <span>Owner</span>
-        <span>Priority</span>
+        <span>Impact</span>
         <span>Risk</span>
       </div>
       ${cards.map((card) => roadmapRow(card)).join("")}
@@ -766,6 +767,15 @@ function renderAgentRuns() {
       </section>
       <section class="page-panel wide-panel">
         <div class="section-title">
+          <h2>Codex Live Log</h2>
+          <span>${state.codexProgress?.entries?.length || 0} updates</span>
+        </div>
+        <div class="run-list">
+          ${(state.codexProgress?.entries || []).map(codexProgressItem).join("") || emptyState("No Codex ledger updates yet.")}
+        </div>
+      </section>
+      <section class="page-panel wide-panel">
+        <div class="section-title">
           <h2>Local Activity Timeline</h2>
           <span>${scopedActivity().length} events</span>
         </div>
@@ -777,6 +787,19 @@ function renderAgentRuns() {
   `;
   wireOpenRows();
   document.querySelector("#activityForm").addEventListener("submit", addManualActivity);
+}
+
+function codexProgressItem(entry) {
+  return `
+    <div class="run-item">
+      <div class="agent-head">
+        <strong>${escapeHtml(entry.status || "Observed")}</strong>
+        <span class="agent-state">${entry.updatedAt ? new Date(entry.updatedAt).toLocaleDateString() : "Today"}</span>
+      </div>
+      <p>${escapeHtml(entry.title)}</p>
+      <small>${escapeHtml(entry.detail || "No detail recorded.")}</small>
+    </div>
+  `;
 }
 
 function renderUserSignals() {
@@ -886,9 +909,9 @@ function renderCard(card) {
         <span class="status-pill status-${escapeHtml(card.status)}">${escapeHtml(card.status)}</span>
       </div>
       <div class="card-visual-meta" aria-label="Card scores">
-        <span>P${priorityScore(card)}</span>
-        <span class="risk-dot risk-${riskLevel(card.risk)}">R${card.risk}</span>
-        <span>${progress}%</span>
+        <span title="How valuable this looks">${importanceLabel(card)}</span>
+        <span class="risk-dot risk-${riskLevel(card.risk)}" title="How likely this is to block progress">${riskLabel(card.risk)}</span>
+        <span title="Checklist completion">Ready ${progress}%</span>
       </div>
       <div class="progress-bar" aria-label="Launch check progress">
         <span style="width: ${progress}%"></span>
@@ -1056,8 +1079,8 @@ function roadmapRow(card) {
       </span>
       <span>${escapeHtml(card.column)} / ${escapeHtml(card.status)}</span>
       <span>${escapeHtml(card.owner)}</span>
-      <span>P${priorityScore(card)}</span>
-      <span>${card.risk}</span>
+      <span>${escapeHtml(importanceLabel(card))}</span>
+      <span>${escapeHtml(riskLabel(card.risk))}</span>
     </button>
   `;
 }
@@ -1134,7 +1157,7 @@ function signalRow(card, signal) {
     <button class="signal-row" type="button" data-open-card="${escapeHtml(card.id)}">
       <span>${escapeHtml(signal)}</span>
       <small>${escapeHtml(card.title)}</small>
-      <strong>P${priorityScore(card)}</strong>
+      <strong>${escapeHtml(importanceLabel(card))}</strong>
     </button>
   `;
 }
@@ -1348,6 +1371,8 @@ function populateDetail(cardId) {
   document.querySelector("#agentVerification").value = card.agentSpec.verification.join("\n");
   document.querySelector("#detailPrd").value = card.prd;
   document.querySelector("#detailPrompt").value = card.prompt;
+  const resolveIssueButton = document.querySelector("#resolveIssueButton");
+  resolveIssueButton.hidden = !hasGithubIssue(card) || card.status === "Ship";
 
   fillSelect("#detailColumn", columns, card.column);
   fillSelect("#detailStatus", statuses, card.status);
@@ -1827,6 +1852,36 @@ function deleteActiveCard() {
   renderApp();
 }
 
+async function resolveActiveIssue() {
+  if (!activeCardId) return;
+  const card = findCard(activeCardId);
+  if (!card) return;
+  const button = document.querySelector("#resolveIssueButton");
+  button.disabled = true;
+  button.textContent = "Resolving";
+  try {
+    const response = await fetch("/api/codex/resolve-issue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cardId: activeCardId }),
+    });
+    if (!response.ok) throw new Error("Resolve failed");
+    const result = await response.json();
+    const index = state.cards.findIndex((item) => item.id === activeCardId);
+    if (index >= 0) state.cards[index] = normalizeCard(result.card);
+    await hydrateFromServer();
+    renderApp();
+    openDetail(activeCardId);
+  } catch {
+    card.agentRuns = [...(card.agentRuns || []), "Could not close the linked GitHub issue. Marked for manual review."];
+    saveState();
+    renderApp();
+  } finally {
+    button.disabled = false;
+    button.textContent = "Resolve Issue";
+  }
+}
+
 function findCard(cardId) {
   return state.cards.find((card) => card.id === cardId);
 }
@@ -1838,6 +1893,20 @@ function nextOrder(column) {
 
 function priorityScore(card) {
   return Math.max(1, card.impact + card.confidence - card.risk);
+}
+
+function importanceLabel(card) {
+  const score = priorityScore(card);
+  if (score >= 12) return "Huge";
+  if (score >= 9) return "Big";
+  if (score >= 6) return "Useful";
+  return "Small";
+}
+
+function riskLabel(risk) {
+  if (risk >= 8) return "Blocked";
+  if (risk >= 5) return "Risky";
+  return "Safe";
 }
 
 function checkProgress(card) {
@@ -1854,6 +1923,10 @@ function riskLevel(risk) {
   if (risk >= 8) return "high";
   if (risk >= 5) return "medium";
   return "low";
+}
+
+function hasGithubIssue(card) {
+  return (card.context || []).some((item) => /github\.com\/[^/]+\/[^/]+\/issues\/\d+/i.test(item));
 }
 
 function columnSubtitle(column) {
@@ -1922,6 +1995,7 @@ syncProjectsButton.addEventListener("click", syncProjects);
 
 document.querySelector("#closeDetailButton").addEventListener("click", closeDetail);
 document.querySelector("#deleteCardButton").addEventListener("click", deleteActiveCard);
+document.querySelector("#resolveIssueButton").addEventListener("click", resolveActiveIssue);
 document.querySelector("#resetBoardButton").addEventListener("click", resetBoard);
 
 cardForm.addEventListener("submit", (event) => {

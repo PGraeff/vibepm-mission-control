@@ -14,6 +14,7 @@ const config = await readJson(path.join(__dirname, "vibepm.config.json"), {
 });
 const dataDir = path.join(__dirname, ".data");
 const statePath = path.join(dataDir, "vibepm-state.json");
+const codexProgressPath = path.join(__dirname, "codex-progress.json");
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -64,6 +65,22 @@ createServer(async (req, res) => {
       return sendJson(res, { ok: true, card: result.card, githubIssueUrl: result.githubIssueUrl });
     }
 
+    if (url.pathname === "/api/codex/activity" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      const state = await loadState();
+      const result = await recordCodexActivity(state, body);
+      await saveState(result.state);
+      return sendJson(res, { ok: true, activity: result.activity });
+    }
+
+    if (url.pathname === "/api/codex/resolve-issue" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      const state = await loadState();
+      const result = await resolveLinkedIssue(state, body);
+      await saveState(result.state);
+      return sendJson(res, { ok: true, card: result.card, closedIssueUrl: result.closedIssueUrl });
+    }
+
     return serveStatic(url.pathname, res);
   } catch (error) {
     console.error(error);
@@ -76,12 +93,34 @@ createServer(async (req, res) => {
 async function loadState() {
   await mkdir(dataDir, { recursive: true });
   const fallback = await readJson(path.join(__dirname, "seed-state.json"), null);
-  return await readJson(statePath, fallback || { version: 3, cards: [], projects: [], activity: [] });
+  const state = await readJson(statePath, fallback || { version: 3, cards: [], projects: [], activity: [] });
+  return applyCodexProgress(state);
 }
 
 async function saveState(state) {
   await mkdir(dataDir, { recursive: true });
   await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+}
+
+async function applyCodexProgress(state) {
+  const progress = await readJson(codexProgressPath, { version: 1, entries: [], issues: [] });
+  const progressActivity = (progress.entries || []).map((entry) => ({
+    id: `codex-ledger-${entry.id}`,
+    projectId: entry.projectId || progress.projectId || "",
+    source: "Codex",
+    status: entry.status || "Observed",
+    title: entry.title,
+    detail: entry.detail || "",
+    linkedCardId: entry.linkedCardId || "",
+    createdAt: entry.updatedAt || entry.createdAt || new Date().toISOString(),
+  }));
+
+  const existingIds = new Set((state.activity || []).map((item) => item.id));
+  return {
+    ...state,
+    codexProgress: progress,
+    activity: [...progressActivity.filter((item) => !existingIds.has(item.id)), ...(state.activity || [])].slice(0, 120),
+  };
 }
 
 async function serveStatic(rawPath, res) {
@@ -549,6 +588,86 @@ async function createCodexWorkItem(state, body) {
   return { state, card, githubIssueUrl };
 }
 
+async function recordCodexActivity(state, body) {
+  const project = state.projects.find((item) => item.id === body.projectId) || state.projects[0];
+  const activity = {
+    id: body.id || `activity-codex-${Date.now()}`,
+    projectId: project?.id || body.projectId || "",
+    source: "Codex",
+    status: body.status || "Active",
+    title: body.title || "Codex activity",
+    detail: body.detail || "",
+    linkedCardId: body.linkedCardId || "",
+    createdAt: new Date().toISOString(),
+  };
+  state.activity = [activity, ...(state.activity || [])].slice(0, 120);
+  return { state, activity };
+}
+
+async function resolveLinkedIssue(state, body) {
+  const card = (state.cards || []).find((item) => item.id === body.cardId);
+  if (!card) throw new Error("Card not found");
+
+  const issueUrl = findGithubIssueUrl(card);
+  let closedIssueUrl = "";
+  if (issueUrl) {
+    const issue = parseGithubIssueUrl(issueUrl);
+    if (issue) {
+      closedIssueUrl = await closeGithubIssue(issue.repo, issue.number, body.comment || `Resolved from VibePM card: ${card.title}`);
+    }
+  }
+
+  card.status = "Ship";
+  card.column = "Launch Ready";
+  card.checks = (card.checks || []).map((check) => ({ ...check, done: true }));
+  card.decisions = [];
+  card.updatedAt = new Date().toISOString();
+  card.agentRuns = [...(card.agentRuns || []), closedIssueUrl ? `Closed GitHub issue ${closedIssueUrl}` : "Marked resolved in VibePM."];
+
+  state.activity = [
+    {
+      id: `activity-resolved-${card.id}-${Date.now()}`,
+      projectId: card.projectId || "",
+      source: "Codex",
+      status: "Complete",
+      title: `Resolved: ${card.title}`,
+      detail: closedIssueUrl ? `Closed linked GitHub issue: ${closedIssueUrl}` : "Marked resolved locally.",
+      linkedCardId: card.id,
+      createdAt: new Date().toISOString(),
+    },
+    ...(state.activity || []),
+  ].slice(0, 120);
+
+  return { state, card, closedIssueUrl };
+}
+
+function findGithubIssueUrl(card) {
+  return (card.context || []).find((item) => /github\.com\/[^/]+\/[^/]+\/issues\/\d+/i.test(item)) || "";
+}
+
+function parseGithubIssueUrl(url) {
+  const match = url.match(/github\.com\/([^/]+\/[^/]+)\/issues\/(\d+)/i);
+  if (!match) return null;
+  return { repo: match[1], number: match[2] };
+}
+
+async function closeGithubIssue(repo, number, comment) {
+  return new Promise((resolve) => {
+    execFile(
+      "gh",
+      ["issue", "close", number, "--repo", repo, "--comment", comment],
+      { timeout: 10000 },
+      (error, stdout) => {
+        if (error) {
+          resolve("");
+          return;
+        }
+        resolve(stdout.trim() || `https://github.com/${repo}/issues/${number}`);
+      },
+    );
+  });
+}
+
 async function createGithubIssue(repo, card) {
   const body = [
     card.outcome,
@@ -628,7 +747,8 @@ async function exists(filePath) {
 
 async function readJson(filePath, fallback) {
   try {
-    return JSON.parse(await readFile(filePath, "utf8"));
+    const text = await readFile(filePath, "utf8");
+    return JSON.parse(text.replace(/^\uFEFF/, ""));
   } catch {
     return fallback;
   }
