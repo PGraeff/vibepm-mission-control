@@ -26,11 +26,14 @@ A dark-mode static prototype for the VibePM product-management mission control U
 - Local Codex/project activity monitor model
 - Database schema starter in `database-schema.sql`
 - Local project snapshot helper in `tools/codex-snapshot.ps1`
+- Local Node server with JSON state storage in `.data/vibepm-state.json`
+- Project scanner that reads local Git repos, branches, remotes, dirty files, latest commits, TODO/FIXME comments, and launch-doc gaps
+- `Sync Projects` action for generating real cards/activity from current projects
 
 ## Run locally
 
 ```bash
-python -m http.server 5174 --bind 127.0.0.1
+npm start
 ```
 
 Then open:
@@ -38,3 +41,13 @@ Then open:
 ```text
 http://127.0.0.1:5174
 ```
+
+## Scan local projects
+
+Edit `vibepm.config.json` to control which folders are scanned.
+
+```bash
+npm run scan
+```
+
+Or use the `Sync Projects` button in the app.

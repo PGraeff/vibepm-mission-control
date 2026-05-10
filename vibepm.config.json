@@ -1,0 +1,10 @@
+{
+  "port": 5174,
+  "projectRoots": [
+    "C:/Users/pedro/OneDrive/Documentos"
+  ],
+  "maxDepth": 2,
+  "maxProjects": 24,
+  "trackedTools": ["codex", "git", "github"],
+  "storage": "local-json"
+}

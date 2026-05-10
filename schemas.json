@@ -3,11 +3,20 @@
   "$id": "https://vibepm.local/schemas.json",
   "title": "VibePM Mission Control Data Model",
   "type": "object",
-  "required": ["version", "cards"],
+  "required": ["version", "backend", "cards", "projects", "activity"],
   "properties": {
     "version": {
       "type": "integer",
       "const": 3
+    },
+    "backend": {
+      "type": "object",
+      "properties": {
+        "mode": { "type": "string" },
+        "syncStatus": { "type": "string" },
+        "lastScannedAt": { "type": "string" },
+        "lastExportedAt": { "type": "string" }
+      }
     },
     "cards": {
       "type": "array",
@@ -56,6 +65,7 @@
       ],
       "properties": {
         "id": { "type": "string" },
+        "generated": { "type": "boolean" },
         "column": {
           "type": "string",
           "enum": ["Idea Intake", "Shape", "Build Watch", "Launch Ready"]
@@ -121,7 +131,13 @@
         "name": { "type": "string" },
         "path": { "type": "string" },
         "repo": { "type": "string" },
+        "branch": { "type": "string" },
         "status": { "type": "string" },
+        "dirtyFiles": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "latestCommit": { "type": "string" },
         "linkedCards": {
           "type": "array",
           "items": { "type": "string" }

@@ -235,6 +235,7 @@ const sortMode = document.querySelector("#sortMode");
 const exportButton = document.querySelector("#exportButton");
 const importButton = document.querySelector("#importButton");
 const importInput = document.querySelector("#importInput");
+const syncProjectsButton = document.querySelector("#syncProjectsButton");
 const dialog = document.querySelector("#cardDialog");
 const cardForm = document.querySelector("#cardForm");
 const detailDrawer = document.querySelector("#detailDrawer");
@@ -297,6 +298,65 @@ function loadState() {
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (state.backend?.mode === "local-json") {
+    saveStateToServer();
+  }
+}
+
+async function hydrateFromServer() {
+  try {
+    const response = await fetch("/api/state");
+    if (!response.ok) return;
+    const serverState = await response.json();
+    if (serverState?.version === 3) {
+      if (!serverState.cards?.length && !serverState.projects?.length) {
+        state.backend = { ...state.backend, mode: "local-json", syncStatus: "Connected to local server" };
+        await saveStateToServer();
+        renderApp();
+        return;
+      }
+      state = normalizeState(serverState);
+      state.backend = {
+        ...state.backend,
+        mode: "local-json",
+        syncStatus: state.backend?.syncStatus || "Connected to local server",
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      renderApp();
+    }
+  } catch {
+    state.backend = { ...state.backend, mode: "localStorage", syncStatus: "Browser only" };
+  }
+}
+
+async function saveStateToServer() {
+  try {
+    await fetch("/api/state", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(state),
+    });
+  } catch {
+    state.backend = { ...state.backend, mode: "localStorage", syncStatus: "Browser only" };
+  }
+}
+
+async function syncProjects() {
+  syncProjectsButton.disabled = true;
+  syncProjectsButton.textContent = "Syncing";
+  try {
+    const response = await fetch("/api/scan", { method: "POST" });
+    if (!response.ok) throw new Error("Scan failed");
+    state = normalizeState(await response.json());
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    renderApp();
+  } catch {
+    state.backend = { ...state.backend, syncStatus: "Local server unavailable" };
+    renderApp();
+  } finally {
+    syncProjectsButton.disabled = false;
+    syncProjectsButton.textContent = "Sync Projects";
+  }
 }
 
 function normalizeState(rawState) {
@@ -314,6 +374,7 @@ function normalizeState(rawState) {
 
 function normalizeCard(card) {
   const normalized = createSeedCard(card);
+  normalized.generated = Boolean(card.generated);
   normalized.prd = card.prd || normalized.prd;
   normalized.prdFields = {
     ...normalized.prdFields,
@@ -1541,6 +1602,7 @@ document.querySelector("#newCardButton").addEventListener("click", () => {
 exportButton.addEventListener("click", exportState);
 importButton.addEventListener("click", () => importInput.click());
 importInput.addEventListener("change", importState);
+syncProjectsButton.addEventListener("click", syncProjects);
 
 document.querySelector("#closeDetailButton").addEventListener("click", closeDetail);
 document.querySelector("#deleteCardButton").addEventListener("click", deleteActiveCard);
@@ -1600,5 +1662,5 @@ document.querySelectorAll(".nav-item").forEach((item) => {
   });
 });
 
-saveState();
 renderApp();
+hydrateFromServer();
