@@ -1,42 +1,24 @@
-# VibePM Mission Control
+# VibePM
 
-A dark-mode static prototype for the VibePM product-management mission control UI.
+VibePM is a local-first project command center for vibe coders who want a clearer way to turn projects, GitHub issues, and Codex work into simple tasks.
 
 ## What is included
 
-- Desktop-first Mission Control dashboard
-- Product maturity Kanban board
-- Product intelligence right rail
-- Search and status filtering
-- New-card dialog
-- Drag-and-drop card movement
-- Local persistence with `localStorage`
-- Editable card detail drawer
-- PRD, prompt, signal, agent run, launch check, and decision sections
-- Workflow actions for capture, PRD draft, agent mission, and launch check
-- Priority and risk sorting
-- JSON schema for the local data model in `schemas.json`
-- Working sidebar pages for Roadmap, Idea Inbox, Agent Runs, User Signals, Docs + PRDs, and Launches
-- Inline editors for context links, signals, agent runs, founder decisions, and launch checks
-- Guided PRD generation fields
-- Structured agent mission composer
-- Fast Idea Inbox capture form
-- Launch readiness dashboard with blockers and incomplete checks
-- JSON import/export for local backups and migration
-- Local Codex/project activity monitor model
-- Database schema starter in `database-schema.sql`
-- Local project snapshot helper in `tools/codex-snapshot.ps1`
-- Local Node server with JSON state storage in `.data/vibepm-state.json`
-- Project scanner that reads local Git repos, branches, remotes, dirty files, latest commits, TODO/FIXME comments, and launch-doc gaps
-- `Sync Projects` action for generating real cards/activity from current projects
-- Optional per-project `VIBEPM.md` playbook so generated cards reflect product intent instead of raw Git noise
-- GitHub enrichment through authenticated `gh`: open issues, open PRs, review state, recent branch checks, and generated cards for GitHub work
-- Project selector that scopes board/pages/activity to one scanned project at a time
-- Codex work-item API for creating project-linked cards and optional GitHub issues
+- React/Vite app with a Linear-style workflow and simple language
+- Default `My Tasks` home screen
+- `Inbox` for GitHub issues and project signals before they become tasks
+- `Projects`, `Sprints`, saved `Views`, `Codex`, `Launch`, and `Settings`
+- Task detail drawer with outcome, checks, links, activity, and GitHub resolve actions
+- Local Node API server with JSON state in `.data/vibepm-state.json`
+- Migration from the old card model into tasks, inbox items, and sprints
+- Project scanner for local Git repos, dirty files, latest commits, TODO/FIXME notes, README/playbook gaps, and GitHub metadata through `gh`
+- Codex live log through `codex-progress.json` and `tools/codex-progress.ps1`
+- JSON backup/import in Settings
 
 ## Run locally
 
 ```bash
+npm install
 npm start
 ```
 
@@ -44,6 +26,12 @@ Then open:
 
 ```text
 http://127.0.0.1:5174
+```
+
+`npm start` builds the React app and serves it from the local Node server. During UI development, use:
+
+```bash
+npm run dev
 ```
 
 ## Scan local projects
@@ -54,26 +42,18 @@ Edit `vibepm.config.json` to control which folders are scanned.
 npm run scan
 ```
 
-Or use the `Sync Projects` button in the app.
+Or use the `Sync` button in the app.
 
 ## Teach VibePM About A Project
 
-Copy `docs/VIBEPM_TEMPLATE.md` into a project as `VIBEPM.md`, then fill in product goal, current focus, useful commands, launch checklist, and what Codex should ignore. The scanner reads this file and uses it to generate more useful cards.
+Copy `docs/VIBEPM_TEMPLATE.md` into a project as `VIBEPM.md`, then fill in product goal, current focus, useful commands, launch checklist, and what Codex should ignore.
 
-## GitHub Connection
+## Codex Tracking
 
-The local scanner uses each repo's `origin` remote plus your authenticated `gh` CLI session. Run `gh auth status` if GitHub data does not appear after `Sync Projects`.
+Codex should update the live ledger while working:
 
-## Codex Work Item API
-
-Agents can create app-visible work items by posting to the local server:
-
-```bash
-curl -X POST http://127.0.0.1:5174/api/codex/work-items \
-  -H "Content-Type: application/json" \
-  -d "{\"projectId\":\"project-new-project-4\",\"title\":\"Implement settings view\",\"outcome\":\"Add scoped settings for the active project\",\"checks\":[\"UI renders\",\"State persists\"]}"
+```powershell
+.\tools\codex-progress.ps1 -Title "Implement feature" -Detail "What changed and how it was verified." -Files src/main.tsx,server.js
 ```
 
-Set `"createGithubIssue": true` to also create a GitHub issue in the selected project's connected repo.
-
-See `docs/CODEX_INTEGRATION.md` and `tools/codex-work-item.ps1` for a reusable helper.
+See `docs/CODEX_INTEGRATION.md` for the local API.

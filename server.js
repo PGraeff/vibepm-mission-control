@@ -21,6 +21,9 @@ const mimeTypes = {
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".map": "application/json; charset=utf-8",
   ".sql": "text/plain; charset=utf-8",
   ".ps1": "text/plain; charset=utf-8",
 };
@@ -94,7 +97,7 @@ async function loadState() {
   await mkdir(dataDir, { recursive: true });
   const fallback = await readJson(path.join(__dirname, "seed-state.json"), null);
   const state = await readJson(statePath, fallback || { version: 3, cards: [], projects: [], activity: [] });
-  return applyCodexProgress(state);
+  return normalizeWorkspaceState(await applyCodexProgress(state));
 }
 
 async function saveState(state) {
@@ -123,9 +126,247 @@ async function applyCodexProgress(state) {
   };
 }
 
+function normalizeWorkspaceState(state) {
+  const projects = state.projects || [];
+  const activity = state.activity || [];
+  const cards = state.cards || [];
+  const existingTasks = (state.tasks || []).map((task) => normalizeTask(task, projects, activity));
+  const existingTaskIds = new Set(existingTasks.map((task) => task.id));
+  const migratedTasks = cards
+    .filter((card) => !isGithubIssueCard(card))
+    .map((card) => taskFromCard(card, projects, activity))
+    .filter((task) => {
+      if (existingTaskIds.has(task.id)) return false;
+      existingTaskIds.add(task.id);
+      return true;
+    });
+  const inbox = mergeInboxItems([...(state.inbox || []), ...cards.filter(isGithubIssueCard).map(inboxFromCard), ...inboxFromCodexProgress(state)]);
+  const sprints = (state.sprints?.length ? state.sprints : createDefaultSprints(projects, [...existingTasks, ...migratedTasks])).map(
+    normalizeSprint,
+  );
+
+  return {
+    ...state,
+    version: 3,
+    projects,
+    activity,
+    cards,
+    tasks: [...existingTasks, ...migratedTasks],
+    inbox,
+    sprints,
+  };
+}
+
+function normalizeTask(task, projects, activity) {
+  return {
+    id: task.id,
+    projectId: task.projectId || projects[0]?.id || "",
+    title: task.title || "Untitled task",
+    description: task.description || task.outcome || "",
+    status: normalizeTaskStatus(task.status),
+    priority: normalizePriority(task.priority || task.impact, task.risk),
+    assignee: normalizeAssignee(task.assignee || task.owner),
+    source: normalizeSource(task.source),
+    labels: task.labels || [],
+    sprintId: task.sprintId || "",
+    links: task.links || [],
+    checks: task.checks || [],
+    activity: task.activity || activity.filter((item) => item.linkedCardId === task.id || item.taskId === task.id),
+    createdAt: task.createdAt || task.updatedAt || new Date().toISOString(),
+    updatedAt: task.updatedAt || new Date().toISOString(),
+    launchGate: task.launchGate || task.gate || "",
+  };
+}
+
+function taskFromCard(card, projects, activity) {
+  const links = (card.context || []).filter((item) => /^https?:\/\//i.test(item));
+  return normalizeTask(
+    {
+      id: card.id,
+      projectId: card.projectId || projects[0]?.id || "",
+      title: card.title,
+      description: card.outcome || card.prd || "",
+      status: card.status,
+      priority: normalizePriority(card.impact, card.risk),
+      assignee: card.owner || (card.source === "Codex" ? "Codex" : "Me"),
+      source: card.source || inferSourceFromContext(card.context),
+      labels: [...new Set([card.column, ...(card.context || []).filter((item) => !/^https?:\/\//i.test(item))])].filter(Boolean),
+      sprintId: "",
+      links,
+      checks: card.checks || [],
+      activity: [
+        ...(card.agentRuns || []).map((run, index) => ({
+          id: `run-${card.id}-${index}`,
+          projectId: card.projectId || "",
+          taskId: card.id,
+          actor: "Codex",
+          action: "logged work",
+          title: run,
+          detail: run,
+          createdAt: card.updatedAt || new Date().toISOString(),
+        })),
+        ...activity.filter((item) => item.linkedCardId === card.id),
+      ],
+      createdAt: card.createdAt || card.updatedAt || new Date().toISOString(),
+      updatedAt: card.updatedAt || new Date().toISOString(),
+      launchGate: card.gate || "",
+    },
+    projects,
+    activity,
+  );
+}
+
+function inboxFromCard(card) {
+  const link = findGithubIssueUrl(card);
+  const issueTitle = card.outcome || card.title;
+  const issueBody = card.signals?.[0] || card.outcome || "";
+  return {
+    id: `inbox-${card.id}`,
+    projectId: card.projectId || "",
+    source: "GitHub",
+    title: issueTitle,
+    body: issueBody,
+    suggestedTask: {
+      id: card.id,
+      title: issueTitle,
+      description: issueBody,
+      priority: normalizePriority(card.impact, card.risk),
+      source: "GitHub",
+      assignee: "Me",
+      links: link ? [link] : [],
+      checks: card.checks || [{ id: `triage-${card.id}`, label: "Decide next step", done: false }],
+      labels: card.context || ["GitHub"],
+      launchGate: card.gate || "Triage GitHub issue",
+    },
+    state: "New",
+    links: link ? [link] : [],
+    labels: (card.context || []).filter((item) => !/^https?:\/\//i.test(item)),
+    createdAt: card.updatedAt || new Date().toISOString(),
+  };
+}
+
+function inboxFromCodexProgress(state) {
+  return (state.codexProgress?.entries || [])
+    .filter((entry) => entry.status !== "Complete")
+    .map((entry) => ({
+      id: `inbox-codex-${entry.id}`,
+      projectId: entry.projectId || state.codexProgress?.projectId || "",
+      source: "Codex",
+      title: entry.title,
+      body: entry.detail || "",
+      suggestedTask: {
+        id: `task-codex-${entry.id}`,
+        title: entry.title,
+        description: entry.detail || "",
+        priority: "Medium",
+        source: "Codex",
+        assignee: "Codex",
+        labels: ["Codex"],
+      },
+      state: "New",
+      links: [],
+      labels: ["Codex"],
+      createdAt: entry.updatedAt || entry.createdAt || new Date().toISOString(),
+    }));
+}
+
+function mergeInboxItems(items) {
+  const seen = new Set();
+  return items
+    .map((item) => ({ ...item, state: item.state || "New", links: item.links || [], labels: item.labels || [] }))
+    .filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+}
+
+function createDefaultSprints(projects, tasks) {
+  const now = new Date();
+  const start = now.toISOString().slice(0, 10);
+  const endDate = new Date(now);
+  endDate.setDate(now.getDate() + 14);
+  return projects.map((project) => ({
+    id: `sprint-${slug(project.name)}-current`,
+    projectId: project.id,
+    name: "Current Sprint",
+    start,
+    end: endDate.toISOString().slice(0, 10),
+    status: "Active",
+    taskIds: tasks.filter((task) => task.projectId === project.id && task.status !== "Done").slice(0, 8).map((task) => task.id),
+  }));
+}
+
+function normalizeSprint(sprint) {
+  return {
+    id: sprint.id,
+    projectId: sprint.projectId || "",
+    name: sprint.name || "Current Sprint",
+    start: sprint.start || "",
+    end: sprint.end || "",
+    status: sprint.status || "Active",
+    taskIds: sprint.taskIds || [],
+  };
+}
+
+function isGithubIssueCard(card) {
+  return /-gh-issue-\d+$/i.test(card.id) || (card.context || []).some((item) => /github\.com\/[^/]+\/[^/]+\/issues\/\d+/i.test(item));
+}
+
+function normalizeTaskStatus(status) {
+  const map = {
+    Signal: "Todo",
+    Draft: "Todo",
+    Spec: "Todo",
+    Active: "Doing",
+    Review: "Needs Review",
+    Guard: "Blocked",
+    Ship: "Done",
+    Blocked: "Blocked",
+    Todo: "Todo",
+    Doing: "Doing",
+    "Needs Review": "Needs Review",
+    Done: "Done",
+  };
+  return map[status] || "Todo";
+}
+
+function normalizePriority(priority, risk = 5) {
+  if (["Low", "Medium", "High", "Urgent"].includes(priority)) return priority;
+  const score = Number(priority || 5);
+  const riskScore = Number(risk || 5);
+  if (riskScore >= 8) return "Urgent";
+  if (score >= 8) return "High";
+  if (score >= 5) return "Medium";
+  return "Low";
+}
+
+function normalizeAssignee(owner) {
+  if (!owner || /founder|reviewer/i.test(owner)) return "Me";
+  if (/codex/i.test(owner)) return "Codex";
+  if (/github/i.test(owner)) return "GitHub";
+  return owner;
+}
+
+function normalizeSource(source) {
+  if (["Manual", "Codex", "GitHub", "Project Scan", "Launch"].includes(source)) return source;
+  if (/codex/i.test(source || "")) return "Codex";
+  if (/github/i.test(source || "")) return "GitHub";
+  return "Manual";
+}
+
+function inferSourceFromContext(context = []) {
+  if (context.some((item) => /github/i.test(item))) return "GitHub";
+  if (context.some((item) => /codex|agent/i.test(item))) return "Codex";
+  if (context.some((item) => /launch|readme|todo|git/i.test(item))) return "Project Scan";
+  return "Manual";
+}
+
 async function serveStatic(rawPath, res) {
   const pathname = rawPath === "/" ? "/index.html" : decodeURIComponent(rawPath);
-  const filePath = path.normalize(path.join(__dirname, pathname));
+  const distPath = path.normalize(path.join(__dirname, "dist", pathname));
+  const rootPath = path.normalize(path.join(__dirname, pathname));
+  const filePath = (await exists(distPath)) ? distPath : rootPath;
   if (!filePath.startsWith(__dirname)) {
     res.writeHead(403);
     res.end("Forbidden");

@@ -1,58 +1,79 @@
 {
-  "version": 1,
-  "projectId": "project-new-project-4",
-  "entries": [
-    {
-      "id": "simplify-card-language",
-      "projectId": "project-new-project-4",
-      "status": "Complete",
-      "title": "Replace confusing card shorthand",
-      "detail": "Changed compact card chips from P/R abbreviations to plain labels like Big, Risky, and Ready.",
-      "linkedCardId": "",
-      "files": [
-        "app.js",
-        "index.html",
-        "styles.css"
-      ],
-      "createdAt": "2026-05-10T00:00:00.000Z",
-      "updatedAt": "2026-05-10T00:00:00.000Z"
-    },
-    {
-      "id": "codex-live-ledger",
-      "projectId": "project-new-project-4",
-      "status": "Complete",
-      "title": "Add Codex live progress tracking",
-      "detail": "Added a tracked Codex progress ledger that the local server exposes to the app, similar to a lightweight local issue tracker.",
-      "linkedCardId": "",
-      "files": [
-        "codex-progress.json",
-        "server.js",
-        "app.js",
-        "tools/codex-progress.ps1",
-        "docs/CODEX_INTEGRATION.md"
-      ],
-      "createdAt": "2026-05-10T00:00:00.000Z",
-      "updatedAt": "2026-05-10T00:00:00.000Z"
-    },
-    {
-      "id": "implement-codex-live-tracking",
-      "projectId": "project-new-project-4",
-      "status": "Complete",
-      "title": "Implement Codex live tracking",
-      "detail": "Replaced confusing score abbreviations, added the tracked Codex progress ledger, verified the app reads it, and wired issue resolution actions.",
-      "linkedCardId": "",
-      "files": [
-        "app.js",
-        "index.html",
-        "server.js",
-        "styles.css",
-        "codex-progress.json",
-        "tools/codex-progress.ps1",
-        "docs/CODEX_INTEGRATION.md"
-      ],
-      "createdAt": "2026-05-10T19:48:55.3096923Z",
-      "updatedAt": "2026-05-10T19:48:55.3096923Z"
-    }
-  ],
-  "issues": []
+    "version":  1,
+    "projectId":  "project-new-project-4",
+    "entries":  [
+                    {
+                        "id":  "simplify-card-language",
+                        "projectId":  "project-new-project-4",
+                        "status":  "Complete",
+                        "title":  "Replace confusing card shorthand",
+                        "detail":  "Changed compact card chips from P/R abbreviations to plain labels like Big, Risky, and Ready.",
+                        "linkedCardId":  "",
+                        "files":  [
+                                      "app.js",
+                                      "index.html",
+                                      "styles.css"
+                                  ],
+                        "createdAt":  "2026-05-10T00:00:00.000Z",
+                        "updatedAt":  "2026-05-10T00:00:00.000Z"
+                    },
+                    {
+                        "id":  "codex-live-ledger",
+                        "projectId":  "project-new-project-4",
+                        "status":  "Complete",
+                        "title":  "Add Codex live progress tracking",
+                        "detail":  "Added a tracked Codex progress ledger that the local server exposes to the app, similar to a lightweight local issue tracker.",
+                        "linkedCardId":  "",
+                        "files":  [
+                                      "codex-progress.json",
+                                      "server.js",
+                                      "app.js",
+                                      "tools/codex-progress.ps1",
+                                      "docs/CODEX_INTEGRATION.md"
+                                  ],
+                        "createdAt":  "2026-05-10T00:00:00.000Z",
+                        "updatedAt":  "2026-05-10T00:00:00.000Z"
+                    },
+                    {
+                        "id":  "implement-codex-live-tracking",
+                        "projectId":  "project-new-project-4",
+                        "status":  "Complete",
+                        "title":  "Implement Codex live tracking",
+                        "detail":  "Replaced confusing score abbreviations, added the tracked Codex progress ledger, verified the app reads it, and wired issue resolution actions.",
+                        "linkedCardId":  "",
+                        "files":  [
+                                      "app.js",
+                                      "index.html",
+                                      "server.js",
+                                      "styles.css",
+                                      "codex-progress.json",
+                                      "tools/codex-progress.ps1",
+                                      "docs/CODEX_INTEGRATION.md"
+                                  ],
+                        "createdAt":  "2026-05-10T19:48:55.3096923Z",
+                        "updatedAt":  "2026-05-10T19:48:55.3096923Z"
+                    },
+                    {
+                        "id":  "rewrite-vibepm-as-linear-style-workflow",
+                        "projectId":  "project-new-project-4",
+                        "status":  "Complete",
+                        "title":  "Rewrite VibePM as Linear-style workflow",
+                        "detail":  "Replaced the old static Kanban UI with a React/Vite local-first task workspace, Inbox triage, Projects, Sprints, Views, Codex live log, Launch, Settings, and server-side migration to tasks/inbox/sprints.",
+                        "linkedCardId":  "",
+                        "files":  [
+                                      "src/main.tsx",
+                                      "src/styles.css",
+                                      "server.js",
+                                      "index.html",
+                                      "package.json",
+                                      "README.md",
+                                      "docs/CODEX_INTEGRATION.md"
+                                  ],
+                        "createdAt":  "2026-05-10T20:15:46.3775992Z",
+                        "updatedAt":  "2026-05-10T20:15:46.3775992Z"
+                    }
+                ],
+    "issues":  [
+
+               ]
 }
