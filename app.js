@@ -636,23 +636,12 @@ function renderCard(card) {
         <span class="status-pill status-${escapeHtml(card.status)}">${escapeHtml(card.status)}</span>
       </div>
       <p class="outcome">${escapeHtml(card.outcome)}</p>
-      <div class="metric-row" aria-label="Card scores">
-        <div class="metric"><span>Impact</span><strong>${card.impact}</strong></div>
-        <div class="metric"><span>Conf</span><strong>${card.confidence}</strong></div>
-        <div class="metric risk-${riskLevel(card.risk)}"><span>Risk</span><strong>${card.risk}</strong></div>
-      </div>
-      <div class="card-meta">
+      <div class="card-compact-meta">
         <span>${escapeHtml(card.owner)}</span>
-        <span>-</span>
         <span>P${priorityScore(card)}</span>
+        <span class="risk-dot risk-${riskLevel(card.risk)}">R${card.risk}</span>
       </div>
-      <div class="context-row">
-        ${card.context.map((item) => `<span class="context-chip">${escapeHtml(item)}</span>`).join("")}
-      </div>
-      <div class="gate">
-        <span>Launch gate</span>
-        <span class="gate-state">${escapeHtml(card.gate)}</span>
-      </div>
+      <p class="gate-line">${escapeHtml(card.gate)}</p>
       <div class="progress-bar" aria-label="Launch check progress">
         <span style="width: ${checkProgress(card)}%"></span>
       </div>

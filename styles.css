@@ -597,8 +597,8 @@ select {
 .work-card {
   display: flex;
   flex-direction: column;
-  gap: 11px;
-  padding: 12px;
+  gap: 9px;
+  padding: 11px;
   border: 1px solid #223044;
   border-radius: 8px;
   background: var(--surface-2);
@@ -637,6 +637,10 @@ select {
   color: #a7b2c1;
   font-size: 12px;
   line-height: 1.45;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .status-pill,
@@ -718,15 +722,50 @@ select {
 }
 
 .card-meta,
-.context-row {
+.context-row,
+.card-compact-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.card-meta {
+.card-meta,
+.card-compact-meta {
   color: var(--muted);
   font-size: 11px;
+}
+
+.card-compact-meta {
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 2px;
+}
+
+.card-compact-meta span {
+  min-width: 0;
+}
+
+.risk-dot {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.risk-dot.risk-high {
+  color: #ff9aa6;
+}
+
+.risk-dot.risk-medium {
+  color: #f2c96f;
+}
+
+.risk-dot.risk-low {
+  color: #62d69d;
 }
 
 .context-chip {
@@ -741,6 +780,15 @@ select {
   justify-content: space-between;
   color: var(--muted);
   font-size: 11px;
+}
+
+.gate-line {
+  color: var(--subtle);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .gate-state {
