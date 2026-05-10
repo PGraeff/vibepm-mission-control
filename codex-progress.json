@@ -86,6 +86,20 @@
                                   ],
                         "createdAt":  "2026-05-10T20:32:32.9287114Z",
                         "updatedAt":  "2026-05-10T20:32:32.9287114Z"
+                    },
+                    {
+                        "id":  "fix-project-scoped-sprints-ui",
+                        "projectId":  "project-new-project-4",
+                        "status":  "Complete",
+                        "title":  "Fix project-scoped sprints UI",
+                        "detail":  "Replaced the cramped multi-project sprint grid with a project-scoped sprint page, added a clean all-project picker, and made sprint/filter counts match the selected project.",
+                        "linkedCardId":  "",
+                        "files":  [
+                                      "src/main.tsx",
+                                      "src/styles.css"
+                                  ],
+                        "createdAt":  "2026-05-10T20:53:54.8951174Z",
+                        "updatedAt":  "2026-05-10T20:53:54.8951174Z"
                     }
                 ],
     "issues":  [

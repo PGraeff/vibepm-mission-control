@@ -302,7 +302,7 @@ function App() {
   const appState = state;
   const selectedProject = selectedProjectId === "all" ? null : appState.projects.find((project) => project.id === selectedProjectId);
   const newInboxCount = appState.inbox.filter((item) => item.state === "New").length;
-  const blockedCount = appState.tasks.filter((task) => task.status === "Blocked").length;
+  const blockedCount = visibleTasks.filter((task) => task.status === "Blocked").length;
   const activeCodexCount = appState.tasks.filter((task) => task.assignee === "Codex" && task.status !== "Done").length;
 
   return (
@@ -398,7 +398,7 @@ function App() {
             <option value="Project Scan">Project Scan</option>
             <option value="Launch">Launch</option>
           </select>
-          <span>{visibleTasks.length} tasks</span>
+          <span>{taskCountLabel(visibleTasks.length)}</span>
           {blockedCount ? <span className="danger">{blockedCount} blocked</span> : <span className="ok">No blockers</span>}
         </div>
 
@@ -460,7 +460,16 @@ function App() {
     }
 
     if (view === "sprints") {
-      return <SprintsView sprints={appState.sprints} tasks={visibleTasks} projects={appState.projects} onOpenTask={setSelectedTaskId} />;
+      return (
+        <SprintsView
+          sprints={appState.sprints}
+          tasks={visibleTasks}
+          projects={appState.projects}
+          selectedProjectId={selectedProjectId}
+          onOpenTask={setSelectedTaskId}
+          onSelectProject={setSelectedProjectId}
+        />
+      );
     }
 
     if (view === "views") {
@@ -659,43 +668,93 @@ function SprintsView({
   sprints,
   tasks,
   projects,
+  selectedProjectId,
   onOpenTask,
+  onSelectProject,
 }: {
   sprints: Sprint[];
   tasks: Task[];
   projects: Project[];
+  selectedProjectId: string;
   onOpenTask: (id: string) => void;
+  onSelectProject: (id: string) => void;
 }) {
-  const active = sprints.filter((sprint) => sprint.status === "Active");
-  if (!active.length) return <EmptyState title="No active sprint yet. New tasks still work without one." icon={Timer} />;
+  const active = sprints.filter(
+    (sprint) => sprint.status === "Active" && (selectedProjectId === "all" || sprint.projectId === selectedProjectId),
+  );
+
+  if (selectedProjectId === "all") {
+    return (
+      <div className="sprint-page">
+        <section className="panel sprint-focus">
+          <div className="section-title">
+            <div>
+              <h2>Pick a project</h2>
+              <p>Sprints stay useful when they focus on one project at a time.</p>
+            </div>
+            <Chip tone="blue">{projects.length} projects</Chip>
+          </div>
+          <div className="sprint-project-list">
+            {projects.map((project) => {
+              const sprint = sprints.find((entry) => entry.projectId === project.id && entry.status === "Active");
+              const sprintTasks = sprint
+                ? tasks.filter((task) => task.projectId === project.id && (task.sprintId === sprint.id || sprint.taskIds.includes(task.id)))
+                : [];
+              const blocked = sprintTasks.filter((task) => task.status === "Blocked").length;
+              return (
+                <button key={project.id} type="button" onClick={() => onSelectProject(project.id)}>
+                  <span>
+                    <strong>{project.name}</strong>
+                    <small>{sprint ? `${taskCountLabel(sprintTasks.length)} this sprint` : "No sprint yet"}</small>
+                  </span>
+                  {blocked ? <Chip tone="red">{blocked} blocked</Chip> : <Chip>Open</Chip>}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  if (!active.length) return <EmptyState title="No active sprint for this project yet." icon={Timer} />;
+
+  const sprint = active[0];
+  const project = projects.find((entry) => entry.id === sprint.projectId);
+  const sprintTasks = tasks.filter((task) => task.sprintId === sprint.id || sprint.taskIds.includes(task.id));
+  const done = sprintTasks.filter((task) => task.status === "Done").length;
+  const blocked = sprintTasks.filter((task) => task.status === "Blocked").length;
+  const remaining = Math.max(sprintTasks.length - done, 0);
+
   return (
-    <div className="sprint-grid">
-      {active.map((sprint) => {
-        const sprintTasks = tasks.filter((task) => task.sprintId === sprint.id || sprint.taskIds.includes(task.id));
-        const done = sprintTasks.filter((task) => task.status === "Done").length;
-        return (
-          <section className="panel" key={sprint.id}>
-            <div className="section-title">
-              <div>
-                <h2>{sprint.name}</h2>
-                <p>
-                  {projects.find((project) => project.id === sprint.projectId)?.name || "Project"} · {sprint.start} to {sprint.end}
-                </p>
-              </div>
-              <Chip tone="blue">Active</Chip>
-            </div>
-            <div className="sprint-brief">
-              <Metric label="Tasks" value={sprintTasks.length} />
-              <Metric label="Done" value={done} />
-              <div className="start-guide">
-                <Timer size={17} />
-                <span>Sprints are short focus windows. Keep only the work you want to finish soon here.</span>
-              </div>
-            </div>
-            <TaskList tasks={sprintTasks} projects={projects} onOpen={onOpenTask} empty="No sprint tasks." />
-          </section>
-        );
-      })}
+    <div className="sprint-page">
+      <section className="panel sprint-focus">
+        <div className="sprint-heading">
+          <div>
+            <p>{project?.name || "Project"}</p>
+            <h2>{sprint.name}</h2>
+            <span>
+              {sprint.start} to {sprint.end}
+            </span>
+          </div>
+          <Chip tone="blue">Active</Chip>
+        </div>
+        <div className="sprint-summary">
+          <Metric label="To finish" value={remaining} />
+          <Metric label="Done" value={done} />
+          <Metric label="Blocked" value={blocked} />
+        </div>
+      </section>
+      <section className="panel sprint-task-panel">
+        <div className="section-title">
+          <div>
+            <h2>This sprint</h2>
+            <p>Work selected for this project right now.</p>
+          </div>
+          <Chip>{taskCountLabel(sprintTasks.length)}</Chip>
+        </div>
+        <TaskList tasks={sprintTasks} projects={projects} onOpen={onOpenTask} empty="No sprint tasks yet." />
+      </section>
     </div>
   );
 }
@@ -1024,6 +1083,10 @@ function readyToLaunch(tasks: Task[]) {
 
 function titleForView(view: ViewKey) {
   return views.find((item) => item.key === view)?.label || "VibePM";
+}
+
+function taskCountLabel(count: number) {
+  return `${count} ${count === 1 ? "task" : "tasks"}`;
 }
 
 function priorityTone(priority: Task["priority"]) {

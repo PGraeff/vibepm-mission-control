@@ -352,6 +352,79 @@ p {
   margin-bottom: 12px;
 }
 
+.sprint-page {
+  display: grid;
+  gap: 14px;
+  max-width: 920px;
+}
+
+.sprint-focus {
+  display: grid;
+  gap: 14px;
+}
+
+.sprint-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sprint-heading p,
+.sprint-heading span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.sprint-heading h2 {
+  margin: 2px 0 4px;
+  font-size: 22px;
+}
+
+.sprint-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.sprint-task-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.sprint-project-list {
+  display: grid;
+  gap: 8px;
+}
+
+.sprint-project-list button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid var(--soft-line);
+  border-radius: 8px;
+  background: #0b1118;
+  color: var(--text);
+  text-align: left;
+}
+
+.sprint-project-list button:hover {
+  border-color: #3d6dff;
+  background: #101824;
+}
+
+.sprint-project-list span {
+  display: grid;
+  gap: 3px;
+}
+
+.sprint-project-list small {
+  color: var(--muted);
+}
+
 .start-guide {
   display: flex;
   align-items: center;
@@ -778,6 +851,10 @@ p {
   }
 
   .sprint-brief {
+    grid-template-columns: 1fr;
+  }
+
+  .sprint-summary {
     grid-template-columns: 1fr;
   }
 
