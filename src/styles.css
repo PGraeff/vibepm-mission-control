@@ -425,6 +425,105 @@ p {
   color: var(--muted);
 }
 
+.project-focus,
+.milestone-page {
+  display: grid;
+  gap: 14px;
+  max-width: 980px;
+}
+
+.project-setup {
+  display: grid;
+  gap: 14px;
+}
+
+.setup-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.wide-field {
+  grid-column: 1 / -1;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px;
+}
+
+.signal-list {
+  display: grid;
+  gap: 8px;
+}
+
+.signal-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--soft-line);
+  border-radius: 8px;
+  background: #0b1118;
+  color: #ccd8e7;
+}
+
+.milestone-list {
+  display: grid;
+  gap: 10px;
+}
+
+.milestone-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--soft-line);
+  border-radius: 8px;
+  background: #0b1118;
+}
+
+.milestone-edit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px;
+  gap: 10px;
+}
+
+.milestone-edit input,
+.milestone-edit select,
+.milestone-card textarea {
+  width: 100%;
+  padding: 0 10px;
+}
+
+.milestone-edit input,
+.milestone-edit select {
+  height: 38px;
+}
+
+.milestone-card textarea {
+  min-height: 68px;
+  padding-top: 9px;
+  resize: vertical;
+}
+
+.codex-board {
+  display: grid;
+  gap: 10px;
+}
+
+.codex-lane {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--soft-line);
+  border-radius: 8px;
+  background: #0b1118;
+}
+
 .start-guide {
   display: flex;
   align-items: center;
@@ -848,6 +947,11 @@ p {
 
   .workspace-brief {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .setup-grid,
+  .milestone-edit {
+    grid-template-columns: 1fr;
   }
 
   .sprint-brief {

@@ -100,6 +100,21 @@
                                   ],
                         "createdAt":  "2026-05-10T20:53:54.8951174Z",
                         "updatedAt":  "2026-05-10T20:53:54.8951174Z"
+                    },
+                    {
+                        "id":  "implement-project-workflow-features",
+                        "projectId":  "project-new-project-4",
+                        "status":  "Complete",
+                        "title":  "Implement project workflow features",
+                        "detail":  "Added project setup forms, project intelligence signals, editable milestones, simplified task rows, a scoped Codex board, Codex assignment action, and GitHub issue creation for tasks.",
+                        "linkedCardId":  "",
+                        "files":  [
+                                      "src/main.tsx",
+                                      "src/styles.css",
+                                      "server.js"
+                                  ],
+                        "createdAt":  "2026-05-11T23:48:31.5559167Z",
+                        "updatedAt":  "2026-05-11T23:48:31.5559167Z"
                     }
                 ],
     "issues":  [

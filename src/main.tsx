@@ -9,6 +9,7 @@ import {
   Circle,
   ClipboardList,
   ExternalLink,
+  Flag,
   GitPullRequest,
   Inbox,
   LayoutList,
@@ -42,6 +43,9 @@ type Project = {
   };
   currentFocus?: string;
   productGoal?: string;
+  targetUser?: string;
+  doneLooksLike?: string;
+  avoidTouching?: string;
   hasPlaybook?: boolean;
   latestCommit?: string;
 };
@@ -77,6 +81,7 @@ type Task = {
   source: Source;
   labels: string[];
   sprintId?: string;
+  milestoneId?: string;
   links: string[];
   checks: Check[];
   activity: ActivityItem[];
@@ -108,6 +113,16 @@ type Sprint = {
   taskIds: string[];
 };
 
+type Milestone = {
+  id: string;
+  projectId: string;
+  name: string;
+  goal: string;
+  status: "Not started" | "Active" | "Done";
+  taskIds: string[];
+  order: number;
+};
+
 type CodexProgress = {
   entries?: Array<{
     id: string;
@@ -128,11 +143,12 @@ type AppState = {
   tasks: Task[];
   inbox: InboxItem[];
   sprints: Sprint[];
+  milestones: Milestone[];
   activity: ActivityItem[];
   codexProgress?: CodexProgress;
 };
 
-type ViewKey = "my" | "inbox" | "projects" | "sprints" | "views" | "codex" | "launch" | "settings";
+type ViewKey = "my" | "inbox" | "projects" | "sprints" | "milestones" | "views" | "codex" | "launch" | "settings";
 
 const statusOrder: Status[] = ["Next", "In progress", "Needs Review", "Blocked", "Done"];
 const views: Array<{ key: ViewKey; label: string; icon: React.ElementType }> = [
@@ -140,6 +156,7 @@ const views: Array<{ key: ViewKey; label: string; icon: React.ElementType }> = [
   { key: "inbox", label: "Inbox", icon: Inbox },
   { key: "projects", label: "Projects", icon: Target },
   { key: "sprints", label: "Sprints", icon: Timer },
+  { key: "milestones", label: "Milestones", icon: Flag },
   { key: "views", label: "Views", icon: PanelRightOpen },
   { key: "codex", label: "Codex", icon: Bot },
   { key: "launch", label: "Launch", icon: Rocket },
@@ -217,6 +234,73 @@ function App() {
     await save(next);
   }
 
+  async function updateProject(projectId: string, patch: Partial<Project>) {
+    if (!state) return;
+    await save({
+      ...state,
+      projects: state.projects.map((project) => (project.id === projectId ? { ...project, ...patch } : project)),
+    });
+  }
+
+  async function updateMilestone(milestoneId: string, patch: Partial<Milestone>) {
+    if (!state) return;
+    await save({
+      ...state,
+      milestones: state.milestones.map((milestone) => (milestone.id === milestoneId ? { ...milestone, ...patch } : milestone)),
+    });
+  }
+
+  async function createMilestone(projectId: string) {
+    if (!state) return;
+    const milestone: Milestone = {
+      id: `milestone-${Date.now()}`,
+      projectId,
+      name: "New milestone",
+      goal: "Describe the next visible outcome.",
+      status: "Not started",
+      taskIds: [],
+      order: state.milestones.filter((item) => item.projectId === projectId).length + 1,
+    };
+    await save({ ...state, milestones: [...state.milestones, milestone] });
+  }
+
+  async function assignTaskToCodex(task: Task) {
+    if (!state) return;
+    await updateTask(task.id, { assignee: "Codex", status: "In progress", source: task.source === "Manual" ? "Codex" : task.source });
+    const response = await fetch("/api/codex/work-items", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: task.id,
+        projectId: task.projectId,
+        title: task.title,
+        detail: task.description,
+        outcome: task.description,
+        status: "Active",
+        checks: task.checks.map((check) => check.label),
+        context: [...task.labels, ...task.links],
+      }),
+    });
+    if (response.ok) {
+      const next = await loadState();
+      setState(next);
+      setSelectedTaskId(task.id);
+    }
+  }
+
+  async function createGithubIssueForTask(task: Task) {
+    const response = await fetch("/api/github/create-issue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskId: task.id }),
+    });
+    if (response.ok) {
+      const next = await loadState();
+      setState(next);
+      setSelectedTaskId(task.id);
+    }
+  }
+
   async function acceptInbox(item: InboxItem, assignee: Task["assignee"] = "Me") {
     if (!state) return;
     const task: Task = {
@@ -230,6 +314,7 @@ function App() {
       source: item.source,
       labels: [...new Set([...(item.labels || []), ...(item.suggestedTask.labels || [])])],
       sprintId: item.suggestedTask.sprintId || activeSprintForProject(state, item.projectId)?.id || "",
+      milestoneId: item.suggestedTask.milestoneId || activeMilestoneForProject(state, item.projectId)?.id || "",
       links: item.links || [],
       checks: item.suggestedTask.checks || [{ id: `check-${Date.now()}`, label: "Decide next step", done: false }],
       activity: [
@@ -281,6 +366,7 @@ function App() {
       source: "Manual",
       labels: [],
       sprintId: activeSprintForProject(state, projectId)?.id || "",
+      milestoneId: activeMilestoneForProject(state, projectId)?.id || "",
       links: [],
       checks: [{ id: `check-${Date.now()}`, label: "Define done", done: false }],
       activity: [],
@@ -303,7 +389,7 @@ function App() {
   const selectedProject = selectedProjectId === "all" ? null : appState.projects.find((project) => project.id === selectedProjectId);
   const newInboxCount = appState.inbox.filter((item) => item.state === "New").length;
   const blockedCount = visibleTasks.filter((task) => task.status === "Blocked").length;
-  const activeCodexCount = appState.tasks.filter((task) => task.assignee === "Codex" && task.status !== "Done").length;
+  const activeCodexCount = visibleTasks.filter((task) => task.assignee === "Codex" && task.status !== "Done").length;
 
   return (
     <div className="app-shell">
@@ -409,11 +495,14 @@ function App() {
         <TaskDrawer
           task={selectedTask}
           project={appState.projects.find((project) => project.id === selectedTask.projectId)}
+          milestones={appState.milestones.filter((milestone) => milestone.projectId === selectedTask.projectId)}
           activity={appState.activity.filter(
             (activity) => activity.taskId === selectedTask.id || activity.linkedCardId === selectedTask.id,
           )}
           onClose={() => setSelectedTaskId(null)}
           onUpdate={(patch) => updateTask(selectedTask.id, patch)}
+          onAssignCodex={() => assignTaskToCodex(selectedTask)}
+          onCreateGithubIssue={() => createGithubIssueForTask(selectedTask)}
           onResolve={async () => {
             const response = await fetch("/api/codex/resolve-issue", {
               method: "POST",
@@ -456,7 +545,16 @@ function App() {
     }
 
     if (view === "projects") {
-      return <ProjectsView projects={appState.projects} tasks={appState.tasks} onOpenTask={setSelectedTaskId} onSelectProject={setSelectedProjectId} />;
+      return (
+        <ProjectsView
+          projects={appState.projects}
+          tasks={appState.tasks}
+          selectedProjectId={selectedProjectId}
+          onOpenTask={setSelectedTaskId}
+          onSelectProject={setSelectedProjectId}
+          onUpdateProject={updateProject}
+        />
+      );
     }
 
     if (view === "sprints") {
@@ -472,12 +570,27 @@ function App() {
       );
     }
 
+    if (view === "milestones") {
+      return (
+        <MilestonesView
+          milestones={appState.milestones}
+          tasks={visibleTasks}
+          projects={appState.projects}
+          selectedProjectId={selectedProjectId}
+          onOpenTask={setSelectedTaskId}
+          onSelectProject={setSelectedProjectId}
+          onUpdateMilestone={updateMilestone}
+          onCreateMilestone={createMilestone}
+        />
+      );
+    }
+
     if (view === "views") {
       return <SavedViewsView tasks={appState.tasks} projects={appState.projects} onOpenTask={setSelectedTaskId} />;
     }
 
     if (view === "codex") {
-      return <CodexView state={appState} onOpenTask={setSelectedTaskId} />;
+      return <CodexView state={appState} tasks={visibleTasks} selectedProjectId={selectedProjectId} onOpenTask={setSelectedTaskId} />;
     }
 
     if (view === "launch") {
@@ -543,12 +656,11 @@ function TaskRow({ task, project, onOpen }: { task: Task; project?: Project; onO
       <StatusIcon status={task.status} />
       <div className="task-main">
         <strong>{task.title}</strong>
-        <span>{project?.name || "Unknown project"}</span>
+        <span>{nextActionForTask(task)}</span>
       </div>
       <div className="task-chips">
-        <Chip tone={priorityTone(task.priority)}>{task.priority}</Chip>
-        <Chip tone={sourceTone(task.source)}>{task.source}</Chip>
-        <Chip>{task.assignee}</Chip>
+        <Chip>{task.assignee === "Codex" ? "Codex" : "You"}</Chip>
+        <Chip tone={task.status === "Blocked" ? "red" : task.status === "Done" ? "green" : "default"}>{task.status}</Chip>
       </div>
       <ChevronRight size={16} />
     </button>
@@ -605,14 +717,29 @@ function InboxView({
 function ProjectsView({
   projects,
   tasks,
+  selectedProjectId,
   onOpenTask,
   onSelectProject,
+  onUpdateProject,
 }: {
   projects: Project[];
   tasks: Task[];
+  selectedProjectId: string;
   onOpenTask: (id: string) => void;
   onSelectProject: (id: string) => void;
+  onUpdateProject: (projectId: string, patch: Partial<Project>) => void;
 }) {
+  const selectedProject = selectedProjectId === "all" ? null : projects.find((project) => project.id === selectedProjectId);
+  if (selectedProject) {
+    const projectTasks = tasks.filter((task) => task.projectId === selectedProject.id);
+    return (
+      <div className="project-focus">
+        <ProjectBriefForm project={selectedProject} tasks={projectTasks} onUpdate={(patch) => onUpdateProject(selectedProject.id, patch)} />
+        <ProjectIntelligence project={selectedProject} tasks={projectTasks} />
+      </div>
+    );
+  }
+
   return (
     <div className="project-grid">
       {projects.map((project) => {
@@ -661,6 +788,85 @@ function CompactTaskPreview({ tasks, onOpen }: { tasks: Task[]; onOpen: (id: str
         </button>
       ))}
     </div>
+  );
+}
+
+function ProjectBriefForm({ project, tasks, onUpdate }: { project: Project; tasks: Task[]; onUpdate: (patch: Partial<Project>) => void }) {
+  const setupDone = [project.productGoal, project.targetUser, project.doneLooksLike, project.avoidTouching, project.github?.repo || project.repo].filter(Boolean).length;
+  return (
+    <section className="panel project-setup">
+      <div className="section-title">
+        <div>
+          <h2>Project setup</h2>
+          <p>Teach VibePM and Codex what this project is trying to become.</p>
+        </div>
+        <Chip tone={setupDone >= 4 ? "green" : "amber"}>{setupDone}/5</Chip>
+      </div>
+      <div className="setup-grid">
+        <label className="field">
+          <span>What is this project?</span>
+          <input value={project.productGoal || ""} onChange={(event) => onUpdate({ productGoal: event.target.value })} placeholder="A simple sentence about the product" />
+        </label>
+        <label className="field">
+          <span>Who is it for?</span>
+          <input value={project.targetUser || ""} onChange={(event) => onUpdate({ targetUser: event.target.value })} placeholder="Vibe coders, founders, internal team..." />
+        </label>
+        <label className="field">
+          <span>What should be done next?</span>
+          <input value={project.currentFocus || ""} onChange={(event) => onUpdate({ currentFocus: event.target.value })} placeholder="The next useful product outcome" />
+        </label>
+        <label className="field">
+          <span>GitHub repo</span>
+          <input value={project.github?.repo || project.repo || ""} onChange={(event) => onUpdate({ repo: event.target.value })} placeholder="owner/repo" />
+        </label>
+        <label className="field wide-field">
+          <span>Local folder</span>
+          <input value={project.path || ""} onChange={(event) => onUpdate({ path: event.target.value })} placeholder="C:\\Users\\you\\project" />
+        </label>
+        <label className="field">
+          <span>What does done look like?</span>
+          <input value={project.doneLooksLike || ""} onChange={(event) => onUpdate({ doneLooksLike: event.target.value })} placeholder="A working flow users can test" />
+        </label>
+        <label className="field wide-field">
+          <span>What should Codex avoid?</span>
+          <textarea value={project.avoidTouching || ""} onChange={(event) => onUpdate({ avoidTouching: event.target.value })} placeholder="Generated files, secrets, billing, migrations..." />
+        </label>
+      </div>
+      <div className="project-metrics">
+        <Metric label="Tasks" value={tasks.length} />
+        <Metric label="Done" value={tasks.filter((task) => task.status === "Done").length} />
+        <Metric label="Blocked" value={tasks.filter((task) => task.status === "Blocked").length} />
+      </div>
+    </section>
+  );
+}
+
+function ProjectIntelligence({ project, tasks }: { project: Project; tasks: Task[] }) {
+  const signals = [
+    project.hasPlaybook ? "Project brief is connected." : "Add a project brief so Codex understands the goal.",
+    project.github?.repo || project.repo ? `GitHub: ${project.github?.repo || project.repo}` : "Connect a GitHub repo when this project is ready for issues.",
+    tasks.some((task) => task.status === "Blocked") ? "There are blockers to clear before launch." : "No blockers found for this project.",
+    tasks.some((task) => task.title.toLowerCase().includes("readme")) ? "Documentation needs attention." : "No README warning is active.",
+    project.avoidTouching ? "Codex guardrails are written." : "Add Codex guardrails before assigning risky work.",
+  ];
+  return (
+    <section className="panel">
+      <div className="section-title">
+        <div>
+          <h2>Project intelligence</h2>
+          <p>Plain-language signals from the repo and setup brief.</p>
+        </div>
+        <Sparkles size={18} />
+      </div>
+      <div className="signal-list">
+        {signals.map((signal) => (
+          <div className="signal-row" key={signal}>
+            <CheckCircle2 size={16} />
+            <span>{signal}</span>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -759,6 +965,94 @@ function SprintsView({
   );
 }
 
+function MilestonesView({
+  milestones,
+  tasks,
+  projects,
+  selectedProjectId,
+  onOpenTask,
+  onSelectProject,
+  onUpdateMilestone,
+  onCreateMilestone,
+}: {
+  milestones: Milestone[];
+  tasks: Task[];
+  projects: Project[];
+  selectedProjectId: string;
+  onOpenTask: (id: string) => void;
+  onSelectProject: (id: string) => void;
+  onUpdateMilestone: (milestoneId: string, patch: Partial<Milestone>) => void;
+  onCreateMilestone: (projectId: string) => void;
+}) {
+  const project = selectedProjectId === "all" ? null : projects.find((item) => item.id === selectedProjectId);
+  if (!project) {
+    return (
+      <div className="sprint-page">
+        <section className="panel sprint-focus">
+          <div className="section-title">
+            <div>
+              <h2>Pick a project</h2>
+              <p>Milestones are editable project steps, so choose one project first.</p>
+            </div>
+            <Chip tone="blue">{projects.length} projects</Chip>
+          </div>
+          <div className="sprint-project-list">
+            {projects.map((item) => (
+              <button key={item.id} type="button" onClick={() => onSelectProject(item.id)}>
+                <span>
+                  <strong>{item.name}</strong>
+                  <small>{milestones.filter((milestone) => milestone.projectId === item.id).length} milestones</small>
+                </span>
+                <Chip>Open</Chip>
+              </button>
+            ))}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  const projectMilestones = milestones
+    .filter((milestone) => milestone.projectId === project.id)
+    .sort((a, b) => a.order - b.order);
+
+  return (
+    <div className="milestone-page">
+      <section className="panel">
+        <div className="section-title">
+          <div>
+            <h2>{project.name} milestones</h2>
+            <p>Simple steps from first working version to launch.</p>
+          </div>
+          <button className="secondary" type="button" onClick={() => onCreateMilestone(project.id)}>
+            <Plus size={15} />
+            Milestone
+          </button>
+        </div>
+        <div className="milestone-list">
+          {projectMilestones.map((milestone) => {
+            const milestoneTasks = tasks.filter((task) => task.milestoneId === milestone.id || milestone.taskIds.includes(task.id));
+            return (
+              <article className="milestone-card" key={milestone.id}>
+                <div className="milestone-edit">
+                  <input value={milestone.name} onChange={(event) => onUpdateMilestone(milestone.id, { name: event.target.value })} />
+                  <select value={milestone.status} onChange={(event) => onUpdateMilestone(milestone.id, { status: event.target.value as Milestone["status"] })}>
+                    <option>Not started</option>
+                    <option>Active</option>
+                    <option>Done</option>
+                  </select>
+                </div>
+                <textarea value={milestone.goal} onChange={(event) => onUpdateMilestone(milestone.id, { goal: event.target.value })} />
+                <CompactTaskPreview tasks={milestoneTasks.slice(0, 4)} onOpen={onOpenTask} />
+              </article>
+            );
+          })}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function SavedViewsView({ tasks, projects, onOpenTask }: { tasks: Task[]; projects: Project[]; onOpenTask: (id: string) => void }) {
   function tasksFor(viewId: string) {
     if (viewId === "me") return tasks.filter((task) => task.assignee === "Me");
@@ -789,19 +1083,49 @@ function SavedViewsView({ tasks, projects, onOpenTask }: { tasks: Task[]; projec
   );
 }
 
-function CodexView({ state, onOpenTask }: { state: AppState; onOpenTask: (id: string) => void }) {
-  const codexTasks = state.tasks.filter((task) => task.assignee === "Codex" || task.source === "Codex");
+function CodexView({
+  state,
+  tasks,
+  selectedProjectId,
+  onOpenTask,
+}: {
+  state: AppState;
+  tasks: Task[];
+  selectedProjectId: string;
+  onOpenTask: (id: string) => void;
+}) {
+  const codexTasks = tasks.filter((task) => task.assignee === "Codex" || task.source === "Codex");
+  const logEntries = (state.codexProgress?.entries || []).filter(
+    (entry) => selectedProjectId === "all" || entry.projectId === selectedProjectId,
+  );
+  const lanes: Array<{ label: string; tasks: Task[] }> = [
+    { label: "Queued", tasks: codexTasks.filter((task) => task.status === "Next") },
+    { label: "Working", tasks: codexTasks.filter((task) => task.status === "In progress") },
+    { label: "Needs Review", tasks: codexTasks.filter((task) => task.status === "Needs Review") },
+    { label: "Done", tasks: codexTasks.filter((task) => task.status === "Done") },
+  ];
   return (
     <div className="split-content">
       <section className="panel">
         <div className="section-title">
           <div>
-            <h2>Codex Tasks</h2>
+            <h2>Codex board</h2>
             <p>Work assigned to the AI teammate.</p>
           </div>
           <Bot size={18} />
         </div>
-        <TaskList tasks={codexTasks} projects={state.projects} onOpen={onOpenTask} empty="No Codex tasks yet." />
+        <div className="codex-board">
+          {lanes.map((lane) => (
+            <div className="codex-lane" key={lane.label}>
+              <div className="card-head">
+                <strong>{lane.label}</strong>
+                <Chip>{lane.tasks.length}</Chip>
+              </div>
+              <CompactTaskPreview tasks={lane.tasks.slice(0, 6)} onOpen={onOpenTask} />
+              {!lane.tasks.length ? <div className="mini-empty">Nothing here.</div> : null}
+            </div>
+          ))}
+        </div>
       </section>
       <section className="panel">
         <div className="section-title">
@@ -812,9 +1136,10 @@ function CodexView({ state, onOpenTask }: { state: AppState; onOpenTask: (id: st
           <Activity size={18} />
         </div>
         <div className="activity-list">
-          {(state.codexProgress?.entries || []).map((entry) => (
+          {logEntries.map((entry) => (
             <CodexLogItem key={entry.id} entry={entry} />
           ))}
+          {!logEntries.length ? <div className="mini-empty">No Codex updates for this project yet.</div> : null}
         </div>
       </section>
     </div>
@@ -911,16 +1236,22 @@ function SettingsView({ state, onImport }: { state: AppState; onImport: (file: F
 function TaskDrawer({
   task,
   project,
+  milestones,
   activity,
   onClose,
   onUpdate,
+  onAssignCodex,
+  onCreateGithubIssue,
   onResolve,
 }: {
   task: Task;
   project?: Project;
+  milestones: Milestone[];
   activity: ActivityItem[];
   onClose: () => void;
   onUpdate: (patch: Partial<Task>) => void;
+  onAssignCodex: () => void;
+  onCreateGithubIssue: () => void;
   onResolve: () => void;
 }) {
   const githubIssue = task.links.find((link) => link.includes("github.com") && link.includes("/issues/"));
@@ -955,8 +1286,13 @@ function TaskDrawer({
           </button>
         ) : null}
         {task.assignee !== "Codex" ? (
-          <button className="secondary" type="button" onClick={() => onUpdate({ assignee: "Codex", status: "In progress" })}>
+          <button className="secondary" type="button" onClick={onAssignCodex}>
             Send to Codex
+          </button>
+        ) : null}
+        {!githubIssue && project?.github?.repo ? (
+          <button className="secondary" type="button" onClick={onCreateGithubIssue}>
+            Create GitHub Issue
           </button>
         ) : null}
       </div>
@@ -966,6 +1302,20 @@ function TaskDrawer({
         <Chip tone={priorityTone(task.priority)}>{task.priority}</Chip>
         <Chip>{project?.name || "Project"}</Chip>
       </div>
+
+      {milestones.length ? (
+        <label className="field">
+          <span>Milestone</span>
+          <select value={task.milestoneId || ""} onChange={(event) => onUpdate({ milestoneId: event.target.value })}>
+            <option value="">No milestone</option>
+            {milestones.map((milestone) => (
+              <option key={milestone.id} value={milestone.id}>
+                {milestone.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
 
       <section>
         <label className="field">
@@ -1077,6 +1427,10 @@ function activeSprintForProject(state: AppState, projectId: string) {
   return state.sprints.find((sprint) => sprint.projectId === projectId && sprint.status === "Active");
 }
 
+function activeMilestoneForProject(state: AppState, projectId: string) {
+  return state.milestones.find((milestone) => milestone.projectId === projectId && milestone.status === "Active");
+}
+
 function readyToLaunch(tasks: Task[]) {
   return tasks.filter((task) => task.status === "Done" || task.labels.includes("Launch") || task.source === "Launch");
 }
@@ -1087,6 +1441,19 @@ function titleForView(view: ViewKey) {
 
 function taskCountLabel(count: number) {
   return `${count} ${count === 1 ? "task" : "tasks"}`;
+}
+
+function nextActionForTask(task: Task) {
+  const openCheck = task.checks.find((check) => !check.done);
+  const action = cleanActionLabel(openCheck?.label || "");
+  if (task.status === "Blocked") return task.launchGate || action || "Blocked";
+  if (task.status === "Done") return "Done";
+  if (task.assignee === "Codex") return action ? `Codex: ${action}` : "Codex is assigned";
+  return action || task.launchGate || "Pick the next step";
+}
+
+function cleanActionLabel(label: string) {
+  return label.replace(/^[A-Z?]{1,2}\s+/, "").trim();
 }
 
 function priorityTone(priority: Task["priority"]) {

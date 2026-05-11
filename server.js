@@ -84,6 +84,14 @@ createServer(async (req, res) => {
       return sendJson(res, { ok: true, card: result.card, closedIssueUrl: result.closedIssueUrl });
     }
 
+    if (url.pathname === "/api/github/create-issue" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      const state = await loadState();
+      const result = await createGithubIssueForTask(state, body);
+      await saveState(result.state);
+      return sendJson(res, { ok: true, task: result.task, githubIssueUrl: result.githubIssueUrl });
+    }
+
     return serveStatic(url.pathname, res);
   } catch (error) {
     console.error(error);
@@ -144,6 +152,7 @@ function normalizeWorkspaceState(state) {
   const sprints = (state.sprints?.length ? state.sprints : createDefaultSprints(projects, [...existingTasks, ...migratedTasks])).map(
     normalizeSprint,
   );
+  const milestones = mergeMilestones(state.milestones || [], projects);
 
   return {
     ...state,
@@ -154,6 +163,7 @@ function normalizeWorkspaceState(state) {
     tasks: [...existingTasks, ...migratedTasks],
     inbox,
     sprints,
+    milestones,
   };
 }
 
@@ -169,6 +179,7 @@ function normalizeTask(task, projects, activity) {
     source: normalizeSource(task.source),
     labels: task.labels || [],
     sprintId: task.sprintId || "",
+    milestoneId: task.milestoneId || "",
     links: task.links || [],
     checks: task.checks || [],
     activity: task.activity || activity.filter((item) => item.linkedCardId === task.id || item.taskId === task.id),
@@ -306,6 +317,49 @@ function normalizeSprint(sprint) {
     end: sprint.end || "",
     status: sprint.status || "Active",
     taskIds: sprint.taskIds || [],
+  };
+}
+
+function createDefaultMilestones(projects) {
+  const templates = [
+    ["make-it-run", "Make it run", "The project opens locally with clear setup instructions."],
+    ["make-it-usable", "Make it usable", "The main user flow works without confusing steps."],
+    ["make-it-reliable", "Make it reliable", "Basic tests, error states, and data backup are covered."],
+    ["prepare-to-launch", "Prepare to launch", "Docs, GitHub issues, and launch checks are ready."],
+    ["share-with-users", "Share with users", "A small group can try the app and give feedback."],
+  ];
+  return projects.flatMap((project) =>
+    templates.map(([key, name, goal], index) => ({
+      id: `milestone-${slug(project.name)}-${key}`,
+      projectId: project.id,
+      name,
+      goal,
+      status: index === 0 ? "Active" : "Not started",
+      taskIds: [],
+      order: index + 1,
+    })),
+  );
+}
+
+function mergeMilestones(existing, projects) {
+  const existingMilestones = existing.map(normalizeMilestone);
+  const existingIds = new Set(existingMilestones.map((milestone) => milestone.id));
+  const defaults = createDefaultMilestones(projects).filter((milestone) => !existingIds.has(milestone.id));
+  return [...existingMilestones, ...defaults].sort((a, b) => {
+    if (a.projectId !== b.projectId) return a.projectId.localeCompare(b.projectId);
+    return a.order - b.order;
+  });
+}
+
+function normalizeMilestone(milestone) {
+  return {
+    id: milestone.id,
+    projectId: milestone.projectId || "",
+    name: milestone.name || "Milestone",
+    goal: milestone.goal || "",
+    status: ["Not started", "Active", "Done"].includes(milestone.status) ? milestone.status : "Not started",
+    taskIds: milestone.taskIds || [],
+    order: Number(milestone.order || 0),
   };
 }
 
@@ -773,16 +827,28 @@ function mergeScannedState(state, scanned) {
   const manualCards = (state.cards || []).filter((card) => !card.generated);
   const generatedCards = scanned.cards;
   const manualActivity = (state.activity || []).filter((item) => !item.id.includes("-project-") && item.source !== "Git");
+  const previousProjects = new Map((state.projects || []).map((project) => [project.id, project]));
+  const projects = scanned.projects.map((project) => {
+    const previous = previousProjects.get(project.id) || {};
+    return {
+      ...project,
+      productGoal: previous.productGoal || project.productGoal || "",
+      currentFocus: previous.currentFocus || project.currentFocus || "",
+      targetUser: previous.targetUser || project.targetUser || "",
+      doneLooksLike: previous.doneLooksLike || project.doneLooksLike || "",
+      avoidTouching: previous.avoidTouching || project.avoidTouching || "",
+    };
+  });
 
   return {
     ...state,
     backend: {
       mode: "local-json",
-      syncStatus: `Scanned ${scanned.projects.length} projects`,
+      syncStatus: `Scanned ${projects.length} projects`,
       lastScannedAt: new Date().toISOString(),
       lastExportedAt: state.backend?.lastExportedAt || "",
     },
-    projects: scanned.projects,
+    projects,
     activity: [...scanned.activity, ...manualActivity].slice(0, 100),
     cards: [...manualCards, ...generatedCards],
   };
@@ -859,9 +925,10 @@ async function recordCodexActivity(state, body) {
 
 async function resolveLinkedIssue(state, body) {
   const card = (state.cards || []).find((item) => item.id === body.cardId);
-  if (!card) throw new Error("Card not found");
+  const task = (state.tasks || []).find((item) => item.id === body.cardId);
+  if (!card && !task) throw new Error("Work item not found");
 
-  const issueUrl = findGithubIssueUrl(card);
+  const issueUrl = card ? findGithubIssueUrl(card) : findGithubIssueUrlFromTask(task);
   let closedIssueUrl = "";
   if (issueUrl) {
     const issue = parseGithubIssueUrl(issueUrl);
@@ -870,32 +937,82 @@ async function resolveLinkedIssue(state, body) {
     }
   }
 
-  card.status = "Ship";
-  card.column = "Launch Ready";
-  card.checks = (card.checks || []).map((check) => ({ ...check, done: true }));
-  card.decisions = [];
-  card.updatedAt = new Date().toISOString();
-  card.agentRuns = [...(card.agentRuns || []), closedIssueUrl ? `Closed GitHub issue ${closedIssueUrl}` : "Marked resolved in VibePM."];
+  if (card) {
+    card.status = "Ship";
+    card.column = "Launch Ready";
+    card.checks = (card.checks || []).map((check) => ({ ...check, done: true }));
+    card.decisions = [];
+    card.updatedAt = new Date().toISOString();
+    card.agentRuns = [...(card.agentRuns || []), closedIssueUrl ? `Closed GitHub issue ${closedIssueUrl}` : "Marked resolved in VibePM."];
+  }
+
+  if (task) {
+    task.status = "Done";
+    task.checks = (task.checks || []).map((check) => ({ ...check, done: true }));
+    task.updatedAt = new Date().toISOString();
+  }
+
+  const title = task?.title || card.title;
+  const projectId = task?.projectId || card.projectId || "";
 
   state.activity = [
     {
-      id: `activity-resolved-${card.id}-${Date.now()}`,
-      projectId: card.projectId || "",
+      id: `activity-resolved-${body.cardId}-${Date.now()}`,
+      projectId,
       source: "Codex",
       status: "Complete",
-      title: `Resolved: ${card.title}`,
+      title: `Resolved: ${title}`,
       detail: closedIssueUrl ? `Closed linked GitHub issue: ${closedIssueUrl}` : "Marked resolved locally.",
-      linkedCardId: card.id,
+      linkedCardId: body.cardId,
       createdAt: new Date().toISOString(),
     },
     ...(state.activity || []),
   ].slice(0, 120);
 
-  return { state, card, closedIssueUrl };
+  return { state, card: task || card, closedIssueUrl };
 }
 
 function findGithubIssueUrl(card) {
   return (card.context || []).find((item) => /github\.com\/[^/]+\/[^/]+\/issues\/\d+/i.test(item)) || "";
+}
+
+function findGithubIssueUrlFromTask(task) {
+  return (task.links || []).find((item) => /github\.com\/[^/]+\/[^/]+\/issues\/\d+/i.test(item)) || "";
+}
+
+async function createGithubIssueForTask(state, body) {
+  const task = (state.tasks || []).find((item) => item.id === body.taskId);
+  if (!task) throw new Error("Task not found");
+  const project = (state.projects || []).find((item) => item.id === task.projectId);
+  const repo = body.repo || project?.github?.repo || project?.repo;
+  if (!repo) throw new Error("Project has no GitHub repo");
+
+  const cardShape = {
+    title: task.title,
+    outcome: task.description,
+    checks: task.checks || [],
+  };
+  const githubIssueUrl = await createGithubIssue(repo, cardShape);
+  if (githubIssueUrl) {
+    task.links = [...new Set([...(task.links || []), githubIssueUrl])];
+    task.source = task.source === "Manual" ? "GitHub" : task.source;
+    task.updatedAt = new Date().toISOString();
+  }
+  state.activity = [
+    {
+      id: `activity-github-create-${task.id}-${Date.now()}`,
+      projectId: task.projectId,
+      source: "GitHub",
+      status: githubIssueUrl ? "Complete" : "Blocked",
+      title: githubIssueUrl ? `Created GitHub issue for ${task.title}` : `Could not create GitHub issue for ${task.title}`,
+      detail: githubIssueUrl || "GitHub CLI did not return an issue URL. Check gh auth and repo access.",
+      linkedCardId: task.id,
+      createdAt: new Date().toISOString(),
+    },
+    ...(state.activity || []),
+  ].slice(0, 120);
+
+  return { state, task, githubIssueUrl };
 }
 
 function parseGithubIssueUrl(url) {
