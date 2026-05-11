@@ -115,6 +115,20 @@
                                   ],
                         "createdAt":  "2026-05-11T23:48:31.5559167Z",
                         "updatedAt":  "2026-05-11T23:48:31.5559167Z"
+                    },
+                    {
+                        "id":  "qa-and-bugfix-project-workflow",
+                        "projectId":  "project-new-project-4",
+                        "status":  "Complete",
+                        "title":  "QA and bugfix project workflow",
+                        "detail":  "Ran a browser QA pass across My Tasks, Inbox, Projects, Milestones, and Codex; tested reversible Inbox acceptance; saved QA screenshots; fixed stale milestone migration and setup progress counting.",
+                        "linkedCardId":  "",
+                        "files":  [
+                                      "src/main.tsx",
+                                      "server.js"
+                                  ],
+                        "createdAt":  "2026-05-11T23:54:39.6522317Z",
+                        "updatedAt":  "2026-05-11T23:54:39.6522317Z"
                     }
                 ],
     "issues":  [

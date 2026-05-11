@@ -342,13 +342,33 @@ function createDefaultMilestones(projects) {
 }
 
 function mergeMilestones(existing, projects) {
-  const existingMilestones = existing.map(normalizeMilestone);
+  const projectIds = new Set(projects.map((project) => project.id));
+  const vibepmProject = projects.find((project) => /vibepm/i.test(project.name));
+  const existingMilestones = existing
+    .map((milestone) => normalizeMilestone(migrateLegacyMilestone(milestone, vibepmProject)))
+    .filter((milestone) => projectIds.has(milestone.projectId));
   const existingIds = new Set(existingMilestones.map((milestone) => milestone.id));
   const defaults = createDefaultMilestones(projects).filter((milestone) => !existingIds.has(milestone.id));
   return [...existingMilestones, ...defaults].sort((a, b) => {
     if (a.projectId !== b.projectId) return a.projectId.localeCompare(b.projectId);
     return a.order - b.order;
   });
+}
+
+function migrateLegacyMilestone(milestone, vibepmProject) {
+  if (milestone.projectId !== "project-vibepm" || !vibepmProject) return milestone;
+  const names = {
+    "milestone-first-dogfood": ["First dogfood", "Use VibePM to manage its own development without manual side notes."],
+    "milestone-github-loop": ["GitHub loop", "Create, update, and close GitHub issues from VibePM tasks."],
+  };
+  const [name, goal] = names[milestone.id] || [milestone.name, milestone.goal];
+  return {
+    ...milestone,
+    projectId: vibepmProject.id,
+    name,
+    goal,
+    order: milestone.order || 6,
+  };
 }
 
 function normalizeMilestone(milestone) {

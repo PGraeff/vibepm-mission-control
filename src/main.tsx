@@ -792,7 +792,16 @@ function CompactTaskPreview({ tasks, onOpen }: { tasks: Task[]; onOpen: (id: str
 }
 
 function ProjectBriefForm({ project, tasks, onUpdate }: { project: Project; tasks: Task[]; onUpdate: (patch: Partial<Project>) => void }) {
-  const setupDone = [project.productGoal, project.targetUser, project.doneLooksLike, project.avoidTouching, project.github?.repo || project.repo].filter(Boolean).length;
+  const setupFields = [
+    project.productGoal,
+    project.targetUser,
+    project.currentFocus,
+    project.github?.repo || project.repo,
+    project.path,
+    project.doneLooksLike,
+    project.avoidTouching,
+  ];
+  const setupDone = setupFields.filter(Boolean).length;
   return (
     <section className="panel project-setup">
       <div className="section-title">
@@ -800,7 +809,7 @@ function ProjectBriefForm({ project, tasks, onUpdate }: { project: Project; task
           <h2>Project setup</h2>
           <p>Teach VibePM and Codex what this project is trying to become.</p>
         </div>
-        <Chip tone={setupDone >= 4 ? "green" : "amber"}>{setupDone}/5</Chip>
+        <Chip tone={setupDone >= 5 ? "green" : "amber"}>{setupDone}/{setupFields.length}</Chip>
       </div>
       <div className="setup-grid">
         <label className="field">
