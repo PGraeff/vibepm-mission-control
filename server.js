@@ -18,6 +18,8 @@ const codexProgressPath = path.join(__dirname, "codex-progress.json");
 const codexQueuePath = path.join(dataDir, "codex-work-queue.json");
 const codexRunsPath = path.join(dataDir, "codex-runs.json");
 const codexPromptDir = path.join(dataDir, "codex-prompts");
+const codexLauncherDir = path.join(dataDir, "codex-launchers");
+const codexLaunchStatusDir = path.join(dataDir, "codex-launch-status");
 const codexCommandPath = "C:\\Users\\pedro\\AppData\\Roaming\\npm\\codex.ps1";
 let watcherBusy = false;
 
@@ -1122,8 +1124,11 @@ async function launchCodexTask(state, body) {
   await mkdir(codexPromptDir, { recursive: true });
   const runId = `codex-run-${Date.now()}`;
   const promptPath = path.join(codexPromptDir, `${runId}.md`);
+  const launcherPath = path.join(codexLauncherDir, `${runId}.ps1`);
+  const launchStatusPath = path.join(codexLaunchStatusDir, `${runId}.json`);
   await writeFile(promptPath, queueItem.prompt, "utf8");
-  const launched = await launchCodexTerminal(queueItem, promptPath);
+  await writeCodexLauncherScript(queueItem, promptPath, launcherPath, launchStatusPath);
+  const launched = await launchCodexTerminal(queueItem, launcherPath);
   const run = {
     id: runId,
     queueId: queueItem.id,
@@ -1131,6 +1136,8 @@ async function launchCodexTask(state, body) {
     projectId: queueItem.projectId,
     projectPath: queueItem.projectPath,
     promptPath,
+    launcherPath,
+    launchStatusPath,
     pid: launched.pid,
     status: launched.pid ? "Working" : "Blocked",
     startedAt: new Date().toISOString(),
@@ -1142,6 +1149,8 @@ async function launchCodexTask(state, body) {
   queueItem.runId = run.id;
   queueItem.pid = run.pid;
   queueItem.promptPath = promptPath;
+  queueItem.launcherPath = launcherPath;
+  queueItem.launchStatusPath = launchStatusPath;
   queueItem.lastMessage = launched.message;
   queueItem.updatedAt = run.updatedAt;
   task.assignee = "Codex";
@@ -1290,14 +1299,53 @@ async function stopProcessTree(pid) {
   });
 }
 
-async function launchCodexTerminal(item, promptPath) {
+async function writeCodexLauncherScript(item, promptPath, launcherPath, launchStatusPath) {
+  await mkdir(path.dirname(launcherPath), { recursive: true });
+  await mkdir(path.dirname(launchStatusPath), { recursive: true });
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    `$promptPath = ${psQuote(promptPath)}`,
+    `$projectPath = ${psQuote(item.projectPath)}`,
+    `$codexPath = ${psQuote(codexCommandPath)}`,
+    `$statusPath = ${psQuote(launchStatusPath)}`,
+    `$runId = ${psQuote(path.basename(launchStatusPath, ".json"))}`,
+    "function Write-LaunchStatus {",
+    "  param([string]$Status, [int]$ExitCode, [string]$Message)",
+    "  $payload = [pscustomobject]@{",
+    "    runId = $runId",
+    "    status = $Status",
+    "    exitCode = $ExitCode",
+    "    message = $Message",
+    "    updatedAt = (Get-Date).ToUniversalTime().ToString('o')",
+    "  }",
+    "  $payload | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $statusPath -Encoding UTF8",
+    "}",
+    "$prompt = Get-Content -Raw -LiteralPath $promptPath",
+    "Set-Location -LiteralPath $projectPath",
+    "Write-LaunchStatus -Status 'Started' -ExitCode 0 -Message 'Codex command started.'",
+    "Write-Host ''",
+    `Write-Host ${psQuote(`VibePM started Codex for: ${item.title}`)}`,
+    "Write-Host ''",
+    "Write-Host 'Project:' $projectPath",
+    "Write-Host 'Prompt file:' $promptPath",
+    "Write-Host ''",
+    "# Pass the prompt after -- so Codex receives it as one positional prompt argument.",
+    "& $codexPath --cd $projectPath -- $prompt",
+    "$exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }",
+    "if ($exitCode -ne 0) {",
+    "  Write-LaunchStatus -Status 'Blocked' -ExitCode $exitCode -Message \"Codex exited with code $exitCode.\"",
+    "  Write-Host ''",
+    "  Write-Host 'Codex exited with code' $exitCode",
+    "} else {",
+    "  Write-LaunchStatus -Status 'Exited' -ExitCode 0 -Message 'Codex terminal session ended. Review the task in VibePM.'",
+    "}",
+  ].join("\r\n");
+  await writeFile(launcherPath, script, "utf8");
+}
+
+async function launchCodexTerminal(item, launcherPath) {
   return new Promise((resolve) => {
-    const command = [
-      `$prompt = Get-Content -Raw -LiteralPath ${psQuote(promptPath)}`,
-      `Set-Location -LiteralPath ${psQuote(item.projectPath)}`,
-      `& ${psQuote(codexCommandPath)} -C ${psQuote(item.projectPath)} $prompt`,
-    ].join("; ");
-    const script = `$p = Start-Process -FilePath "powershell.exe" -ArgumentList @("-NoExit","-ExecutionPolicy","Bypass","-Command",${psQuote(command)}) -PassThru; $p.Id`;
+    const script = `$p = Start-Process -FilePath "powershell.exe" -ArgumentList @("-NoExit","-ExecutionPolicy","Bypass","-File",${psQuote(launcherPath)}) -PassThru; $p.Id`;
     execFile("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], { timeout: 10000 }, (error, stdout) => {
       if (error) {
         resolve({ pid: 0, message: `Could not launch Codex: ${error.message}` });
@@ -1368,6 +1416,31 @@ async function runCodexWatcher() {
       }
 
       const run = runs.find((entry) => entry.queueId === item.id);
+      const launchStatus = await readLaunchStatus(item, run);
+      if (launchStatus?.status && launchStatus.status !== "Started") {
+        item.lastMessage = launchStatus.message || item.lastMessage;
+        item.updatedAt = launchStatus.updatedAt || new Date().toISOString();
+        if (launchStatus.status === "Blocked" || Number(launchStatus.exitCode || 0) !== 0) {
+          item.status = "Blocked";
+          task.status = "Blocked";
+        } else if (launchStatus.status === "Exited" && !["Needs Review", "Done", "Blocked"].includes(item.status)) {
+          item.status = "Needs Review";
+          task.status = "Needs Review";
+        }
+        task.updatedAt = item.updatedAt;
+        state.activity = upsertActivity(state.activity || [], {
+          id: `activity-launch-status-${item.taskId}-${launchStatus.status}`,
+          projectId: item.projectId,
+          source: "Codex",
+          status: item.status,
+          title: `Codex ${launchStatus.status.toLowerCase()} for ${item.title}`,
+          detail: item.lastMessage,
+          linkedCardId: item.taskId,
+          createdAt: item.updatedAt,
+        });
+        changed = true;
+      }
+
       if (run && run.status !== item.status) {
         run.status = item.status;
         run.updatedAt = item.updatedAt;
@@ -1389,6 +1462,12 @@ async function runCodexWatcher() {
 async function gitChangedFiles(cwd) {
   const output = await git(cwd, ["status", "--short"]);
   return output.split("\n").map((line) => line.trim()).filter(Boolean).slice(0, 40);
+}
+
+async function readLaunchStatus(item, run) {
+  const statusPath = item.launchStatusPath || run?.launchStatusPath;
+  if (!statusPath) return null;
+  return await readJson(statusPath, null);
 }
 
 function latestProgressForItem(entries, item) {
