@@ -15,6 +15,11 @@ const config = await readJson(path.join(__dirname, "vibepm.config.json"), {
 const dataDir = path.join(__dirname, ".data");
 const statePath = path.join(dataDir, "vibepm-state.json");
 const codexProgressPath = path.join(__dirname, "codex-progress.json");
+const codexQueuePath = path.join(dataDir, "codex-work-queue.json");
+const codexRunsPath = path.join(dataDir, "codex-runs.json");
+const codexPromptDir = path.join(dataDir, "codex-prompts");
+const codexCommandPath = "C:\\Users\\pedro\\AppData\\Roaming\\npm\\codex.ps1";
+let watcherBusy = false;
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -37,7 +42,7 @@ if (process.argv.includes("--scan")) {
   process.exit(0);
 }
 
-createServer(async (req, res) => {
+const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
 
@@ -66,6 +71,32 @@ createServer(async (req, res) => {
       const result = await createCodexWorkItem(state, body);
       await saveState(result.state);
       return sendJson(res, { ok: true, card: result.card, githubIssueUrl: result.githubIssueUrl });
+    }
+
+    if (url.pathname === "/api/codex/queue-task" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      const state = await loadState();
+      const result = await queueCodexTask(state, body);
+      await saveState(result.state);
+      return sendJson(res, { ok: true, queueItem: result.queueItem, prompt: result.prompt });
+    }
+
+    if (url.pathname === "/api/codex/launch-task" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req));
+      const state = await loadState();
+      const result = await launchCodexTask(state, body);
+      await saveState(result.state);
+      return sendJson(res, { ok: true, run: result.run, queueItem: result.queueItem });
+    }
+
+    if (url.pathname === "/api/codex/runs" && req.method === "GET") {
+      return sendJson(res, { queue: await readCodexQueue(), runs: await readCodexRuns() });
+    }
+
+    const cancelMatch = url.pathname.match(/^\/api\/codex\/runs\/([^/]+)\/cancel$/);
+    if (cancelMatch && req.method === "POST") {
+      const result = await cancelCodexRun(decodeURIComponent(cancelMatch[1]));
+      return sendJson(res, { ok: true, run: result });
     }
 
     if (url.pathname === "/api/codex/activity" && req.method === "POST") {
@@ -97,8 +128,11 @@ createServer(async (req, res) => {
     console.error(error);
     sendJson(res, { error: error.message || "Server error" }, 500);
   }
-}).listen(config.port, "127.0.0.1", () => {
+});
+
+server.listen(config.port, "127.0.0.1", () => {
   console.log(`VibePM running at http://127.0.0.1:${config.port}`);
+  startCodexWatcher();
 });
 
 async function loadState() {
@@ -953,7 +987,8 @@ async function resolveLinkedIssue(state, body) {
   if (issueUrl) {
     const issue = parseGithubIssueUrl(issueUrl);
     if (issue) {
-      closedIssueUrl = await closeGithubIssue(issue.repo, issue.number, body.comment || `Resolved from VibePM card: ${card.title}`);
+      const title = task?.title || card?.title || "work item";
+      closedIssueUrl = await closeGithubIssue(issue.repo, issue.number, body.comment || `Resolved from VibePM card: ${title}`);
     }
   }
 
@@ -1033,6 +1068,366 @@ async function createGithubIssueForTask(state, body) {
   ].slice(0, 120);
 
   return { state, task, githubIssueUrl };
+}
+
+async function queueCodexTask(state, body) {
+  const task = findTask(state, body.taskId);
+  if (!task) throw new Error("Task not found");
+  const project = findProject(state, task.projectId);
+  if (!project) throw new Error("Project not found");
+
+  const queue = await readCodexQueue();
+  const existing = queue.find((item) => item.taskId === task.id && !["Done", "Cancelled"].includes(item.status));
+  const queueItem = existing || buildCodexQueueItem(state, task, project);
+  queueItem.status = existing?.status || "Queued";
+  queueItem.updatedAt = new Date().toISOString();
+  queueItem.prompt = buildCodexPrompt(queueItem);
+
+  await writeJson(codexQueuePath, [queueItem, ...queue.filter((item) => item.id !== queueItem.id)]);
+  task.assignee = "Codex";
+  task.status = task.status === "Done" ? "Needs Review" : task.status;
+  task.updatedAt = new Date().toISOString();
+  state.activity = upsertActivity(state.activity || [], {
+    id: `activity-queue-${task.id}`,
+    projectId: task.projectId,
+    source: "Codex",
+    status: "Queued",
+    title: `Queued for Codex: ${task.title}`,
+    detail: "VibePM prepared a task packet for Codex.",
+    linkedCardId: task.id,
+    createdAt: new Date().toISOString(),
+  });
+
+  return { state, queueItem, prompt: queueItem.prompt };
+}
+
+async function launchCodexTask(state, body) {
+  let queue = await readCodexQueue();
+  let queueItem = queue.find((item) => item.id === body.queueId || item.taskId === body.taskId);
+  if (!queueItem) {
+    const queued = await queueCodexTask(state, body);
+    queueItem = queued.queueItem;
+    queue = await readCodexQueue();
+  }
+
+  const task = findTask(state, queueItem.taskId);
+  if (!task) throw new Error("Task not found");
+  if (!(await exists(queueItem.projectPath))) {
+    return await blockCodexLaunch(state, task, queue, queueItem, "Project folder does not exist.");
+  }
+  if (!(await exists(codexCommandPath))) {
+    return await blockCodexLaunch(state, task, queue, queueItem, "Codex CLI was not found at the configured path.");
+  }
+
+  await mkdir(codexPromptDir, { recursive: true });
+  const runId = `codex-run-${Date.now()}`;
+  const promptPath = path.join(codexPromptDir, `${runId}.md`);
+  await writeFile(promptPath, queueItem.prompt, "utf8");
+  const launched = await launchCodexTerminal(queueItem, promptPath);
+  const run = {
+    id: runId,
+    queueId: queueItem.id,
+    taskId: queueItem.taskId,
+    projectId: queueItem.projectId,
+    projectPath: queueItem.projectPath,
+    promptPath,
+    pid: launched.pid,
+    status: launched.pid ? "Working" : "Blocked",
+    startedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    lastMessage: launched.message,
+  };
+
+  queueItem.status = run.status;
+  queueItem.runId = run.id;
+  queueItem.pid = run.pid;
+  queueItem.promptPath = promptPath;
+  queueItem.lastMessage = launched.message;
+  queueItem.updatedAt = run.updatedAt;
+  task.assignee = "Codex";
+  task.status = run.status === "Blocked" ? "Blocked" : "In progress";
+  task.updatedAt = run.updatedAt;
+
+  await writeJson(codexQueuePath, [queueItem, ...queue.filter((item) => item.id !== queueItem.id)]);
+  await writeJson(codexRunsPath, [run, ...(await readCodexRuns()).filter((item) => item.id !== run.id)].slice(0, 80));
+  state.activity = upsertActivity(state.activity || [], {
+    id: `activity-launch-${run.id}`,
+    projectId: task.projectId,
+    source: "Codex",
+    status: run.status,
+    title: `Started Codex: ${task.title}`,
+    detail: launched.message,
+    linkedCardId: task.id,
+    createdAt: run.startedAt,
+  });
+
+  return { state, run, queueItem };
+}
+
+async function blockCodexLaunch(state, task, queue, queueItem, message) {
+  const run = {
+    id: `codex-run-${Date.now()}`,
+    queueId: queueItem.id,
+    taskId: queueItem.taskId,
+    projectId: queueItem.projectId,
+    projectPath: queueItem.projectPath,
+    promptPath: "",
+    pid: 0,
+    status: "Blocked",
+    startedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    lastMessage: message,
+  };
+  queueItem.status = "Blocked";
+  queueItem.lastMessage = message;
+  queueItem.updatedAt = run.updatedAt;
+  task.status = "Blocked";
+  task.assignee = "Codex";
+  task.updatedAt = run.updatedAt;
+  await writeJson(codexQueuePath, [queueItem, ...queue.filter((item) => item.id !== queueItem.id)]);
+  await writeJson(codexRunsPath, [run, ...(await readCodexRuns())].slice(0, 80));
+  state.activity = upsertActivity(state.activity || [], {
+    id: `activity-launch-blocked-${run.id}`,
+    projectId: task.projectId,
+    source: "Codex",
+    status: "Blocked",
+    title: `Could not start Codex: ${task.title}`,
+    detail: message,
+    linkedCardId: task.id,
+    createdAt: run.startedAt,
+  });
+  return { state, run, queueItem };
+}
+
+async function cancelCodexRun(runId) {
+  const runs = await readCodexRuns();
+  const run = runs.find((item) => item.id === runId);
+  if (!run) throw new Error("Run not found");
+  if (run.pid) await stopProcessTree(run.pid);
+  run.status = "Cancelled";
+  run.updatedAt = new Date().toISOString();
+  run.lastMessage = "Marked cancelled in VibePM. Close the Codex terminal if it is still open.";
+  await writeJson(codexRunsPath, runs);
+  const queue = await readCodexQueue();
+  const queueItem = queue.find((item) => item.id === run.queueId);
+  if (queueItem) {
+    queueItem.status = "Cancelled";
+    queueItem.updatedAt = run.updatedAt;
+    queueItem.lastMessage = run.lastMessage;
+    await writeJson(codexQueuePath, queue);
+  }
+  return run;
+}
+
+function buildCodexQueueItem(state, task, project) {
+  const milestone = (state.milestones || []).find((item) => item.id === task.milestoneId);
+  const githubIssueUrl = findGithubIssueUrlFromTask(task);
+  return {
+    id: `queue-${task.id}-${Date.now()}`,
+    taskId: task.id,
+    projectId: task.projectId,
+    projectPath: project.path || "",
+    title: task.title,
+    outcome: task.description,
+    checks: task.checks || [],
+    links: task.links || [],
+    milestone: milestone ? { id: milestone.id, name: milestone.name, goal: milestone.goal } : null,
+    githubIssueUrl,
+    projectBrief: {
+      name: project.name,
+      productGoal: project.productGoal || "",
+      targetUser: project.targetUser || "",
+      currentFocus: project.currentFocus || "",
+      doneLooksLike: project.doneLooksLike || "",
+      avoidTouching: project.avoidTouching || "",
+      repo: project.github?.repo || project.repo || "",
+    },
+    status: "Queued",
+    changedFiles: [],
+    lastMessage: "Queued for Codex.",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function buildCodexPrompt(item) {
+  const checks = item.checks.length ? item.checks.map((check) => `- [ ] ${check.label}`).join("\n") : "- [ ] Verify behavior";
+  const links = item.links.length ? item.links.map((link) => `- ${link}`).join("\n") : "- No links";
+  const progressScript = path.join(__dirname, "tools", "codex-progress.ps1");
+  return [
+    `You are working from VibePM task ${item.taskId}.`,
+    "",
+    `Project: ${item.projectBrief.name}`,
+    `Project path: ${item.projectPath}`,
+    `Product goal: ${item.projectBrief.productGoal || "Not set"}`,
+    `Target user: ${item.projectBrief.targetUser || "Not set"}`,
+    `Current focus: ${item.projectBrief.currentFocus || "Not set"}`,
+    `Done looks like: ${item.projectBrief.doneLooksLike || "Not set"}`,
+    `Avoid touching: ${item.projectBrief.avoidTouching || "No guardrails set"}`,
+    `GitHub repo: ${item.projectBrief.repo || "Not connected"}`,
+    "",
+    `Task: ${item.title}`,
+    `Outcome: ${item.outcome}`,
+    item.milestone ? `Milestone: ${item.milestone.name} - ${item.milestone.goal}` : "Milestone: None",
+    item.githubIssueUrl ? `GitHub issue: ${item.githubIssueUrl}` : "GitHub issue: None",
+    "",
+    "Done checks:",
+    checks,
+    "",
+    "Links:",
+    links,
+    "",
+    "Progress reporting:",
+    `- After major steps, run: & ${psQuote(progressScript)} -Title "${escapePromptText(item.title)}" -Detail "What changed" -Status "Active" -ProjectId "${item.projectId}" -LinkedCardId "${item.taskId}" -Files "path1","path2"`,
+    `- When ready for human review, run the same command with -Status "Complete".`,
+    "- Keep changes scoped to this project and run the relevant verification commands.",
+  ].join("\n");
+}
+
+async function stopProcessTree(pid) {
+  return new Promise((resolve) => {
+    execFile("taskkill.exe", ["/PID", String(pid), "/T", "/F"], { timeout: 5000 }, () => resolve());
+  });
+}
+
+async function launchCodexTerminal(item, promptPath) {
+  return new Promise((resolve) => {
+    const command = [
+      `$prompt = Get-Content -Raw -LiteralPath ${psQuote(promptPath)}`,
+      `Set-Location -LiteralPath ${psQuote(item.projectPath)}`,
+      `& ${psQuote(codexCommandPath)} -C ${psQuote(item.projectPath)} $prompt`,
+    ].join("; ");
+    const script = `$p = Start-Process -FilePath "powershell.exe" -ArgumentList @("-NoExit","-ExecutionPolicy","Bypass","-Command",${psQuote(command)}) -PassThru; $p.Id`;
+    execFile("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], { timeout: 10000 }, (error, stdout) => {
+      if (error) {
+        resolve({ pid: 0, message: `Could not launch Codex: ${error.message}` });
+        return;
+      }
+      resolve({ pid: Number(stdout.trim()) || 0, message: `Codex terminal launched for ${item.title}.` });
+    });
+  });
+}
+
+function startCodexWatcher() {
+  setInterval(() => {
+    runCodexWatcher().catch((error) => console.warn(`Codex watcher failed: ${error.message}`));
+  }, 5000);
+}
+
+async function runCodexWatcher() {
+  if (watcherBusy) return;
+  watcherBusy = true;
+  try {
+    let queue = await readCodexQueue();
+    if (!queue.length) return;
+    const active = queue.filter((item) => ["Queued", "Launching", "Working"].includes(item.status));
+    if (!active.length) return;
+    const state = await loadState();
+    const runs = await readCodexRuns();
+    const progress = await readJson(codexProgressPath, { entries: [] });
+    let changed = false;
+
+    for (const item of active) {
+      const task = findTask(state, item.taskId);
+      if (!task) continue;
+      const files = item.projectPath ? await gitChangedFiles(item.projectPath) : [];
+      if (files.length && files.join("|") !== (item.changedFiles || []).join("|")) {
+        item.changedFiles = files;
+        item.status = "Working";
+        item.lastMessage = `${files.length} changed files detected.`;
+        item.updatedAt = new Date().toISOString();
+        task.status = "In progress";
+        task.assignee = "Codex";
+        task.updatedAt = item.updatedAt;
+        state.activity = upsertActivity(state.activity || [], {
+          id: `activity-files-${item.taskId}`,
+          projectId: item.projectId,
+          source: "Codex",
+          status: "Working",
+          title: `Codex changed files for ${item.title}`,
+          detail: files.join(", "),
+          linkedCardId: item.taskId,
+          createdAt: item.updatedAt,
+        });
+        changed = true;
+      }
+
+      const progressEntry = latestProgressForItem(progress.entries || [], item);
+      if (progressEntry) {
+        item.lastMessage = progressEntry.detail || progressEntry.title;
+        item.updatedAt = progressEntry.updatedAt || progressEntry.createdAt || new Date().toISOString();
+        if (/complete|done|success/i.test(progressEntry.status || "")) {
+          item.status = "Needs Review";
+          task.status = "Needs Review";
+        } else if (/block|error|fail/i.test(progressEntry.status || "")) {
+          item.status = "Blocked";
+          task.status = "Blocked";
+        }
+        task.updatedAt = item.updatedAt;
+        changed = true;
+      }
+
+      const run = runs.find((entry) => entry.queueId === item.id);
+      if (run && run.status !== item.status) {
+        run.status = item.status;
+        run.updatedAt = item.updatedAt;
+        run.lastMessage = item.lastMessage;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      await writeJson(codexQueuePath, queue);
+      await writeJson(codexRunsPath, runs);
+      await saveState(state);
+    }
+  } finally {
+    watcherBusy = false;
+  }
+}
+
+async function gitChangedFiles(cwd) {
+  const output = await git(cwd, ["status", "--short"]);
+  return output.split("\n").map((line) => line.trim()).filter(Boolean).slice(0, 40);
+}
+
+function latestProgressForItem(entries, item) {
+  return entries
+    .filter((entry) => entry.linkedCardId === item.taskId || (entry.projectId === item.projectId && entry.title === item.title))
+    .sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")))[0];
+}
+
+async function readCodexQueue() {
+  return await readJson(codexQueuePath, []);
+}
+
+async function readCodexRuns() {
+  return await readJson(codexRunsPath, []);
+}
+
+async function writeJson(filePath, value) {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+function findTask(state, taskId) {
+  return (state.tasks || []).find((item) => item.id === taskId);
+}
+
+function findProject(state, projectId) {
+  return (state.projects || []).find((item) => item.id === projectId);
+}
+
+function upsertActivity(activity, item) {
+  return [item, ...activity.filter((entry) => entry.id !== item.id)].slice(0, 120);
+}
+
+function psQuote(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function escapePromptText(value) {
+  return String(value).replace(/"/g, "'");
 }
 
 function parseGithubIssueUrl(url) {

@@ -524,6 +524,39 @@ p {
   background: #0b1118;
 }
 
+.codex-run-list {
+  display: grid;
+  gap: 8px;
+}
+
+.codex-queue-card,
+.codex-run-box {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #223044;
+  border-radius: 8px;
+  background: #0d151f;
+}
+
+.codex-queue-card p,
+.codex-queue-card small,
+.codex-run-box span,
+.codex-run-box small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.inline-link {
+  min-height: auto;
+  padding: 0;
+  color: var(--text);
+  text-align: left;
+  justify-content: flex-start;
+  font-weight: 900;
+}
+
 .start-guide {
   display: flex;
   align-items: center;

@@ -129,6 +129,21 @@
                                   ],
                         "createdAt":  "2026-05-11T23:54:39.6522317Z",
                         "updatedAt":  "2026-05-11T23:54:39.6522317Z"
+                    },
+                    {
+                        "id":  "implement-vibepm-codex-bridge",
+                        "projectId":  "project-new-project-4",
+                        "status":  "Complete",
+                        "title":  "Implement VibePM Codex bridge",
+                        "detail":  "Added local Codex work queue, run tracking, in-app Codex launch endpoints, app-owned watcher for git/progress updates, drawer controls, and Codex board run cards.",
+                        "linkedCardId":  "",
+                        "files":  [
+                                      "server.js",
+                                      "src/main.tsx",
+                                      "src/styles.css"
+                                  ],
+                        "createdAt":  "2026-05-12T01:43:07.5429026Z",
+                        "updatedAt":  "2026-05-12T01:43:07.5429026Z"
                     }
                 ],
     "issues":  [

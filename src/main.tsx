@@ -136,6 +136,35 @@ type CodexProgress = {
   }>;
 };
 
+type CodexQueueItem = {
+  id: string;
+  taskId: string;
+  projectId: string;
+  projectPath: string;
+  title: string;
+  outcome: string;
+  status: "Queued" | "Launching" | "Working" | "Needs Review" | "Done" | "Blocked" | "Cancelled";
+  changedFiles?: string[];
+  lastMessage?: string;
+  prompt?: string;
+  runId?: string;
+  updatedAt?: string;
+};
+
+type CodexRun = {
+  id: string;
+  queueId: string;
+  taskId: string;
+  projectId: string;
+  projectPath: string;
+  promptPath?: string;
+  pid?: number;
+  status: string;
+  lastMessage?: string;
+  startedAt?: string;
+  updatedAt?: string;
+};
+
 type AppState = {
   version: number;
   backend?: { mode?: string; syncStatus?: string; lastScannedAt?: string };
@@ -146,6 +175,11 @@ type AppState = {
   milestones: Milestone[];
   activity: ActivityItem[];
   codexProgress?: CodexProgress;
+};
+
+type CodexBridgeState = {
+  queue: CodexQueueItem[];
+  runs: CodexRun[];
 };
 
 type ViewKey = "my" | "inbox" | "projects" | "sprints" | "milestones" | "views" | "codex" | "launch" | "settings";
@@ -180,9 +214,11 @@ function App() {
   const [statusFilter, setStatusFilter] = React.useState<Status | "All">("All");
   const [sourceFilter, setSourceFilter] = React.useState<Source | "All">("All");
   const [syncing, setSyncing] = React.useState(false);
+  const [codexBridge, setCodexBridge] = React.useState<CodexBridgeState>({ queue: [], runs: [] });
 
   React.useEffect(() => {
     loadState().then(setState);
+    loadCodexRuns().then(setCodexBridge);
   }, []);
 
   const selectedTask = React.useMemo(
@@ -299,6 +335,46 @@ function App() {
       setState(next);
       setSelectedTaskId(task.id);
     }
+  }
+
+  async function queueTaskForCodex(task: Task) {
+    const response = await fetch("/api/codex/queue-task", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskId: task.id }),
+    });
+    if (response.ok) {
+      const result = await response.json();
+      setCodexBridge(await loadCodexRuns());
+      const next = await loadState();
+      setState(next);
+      setSelectedTaskId(task.id);
+      return result.prompt as string;
+    }
+    return "";
+  }
+
+  async function launchTaskInCodex(task: Task) {
+    await fetch("/api/codex/launch-task", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskId: task.id }),
+    });
+    setCodexBridge(await loadCodexRuns());
+    const next = await loadState();
+    setState(next);
+    setSelectedTaskId(task.id);
+  }
+
+  async function copyCodexPrompt(task: Task) {
+    let prompt = codexBridge.queue.find((item) => item.taskId === task.id)?.prompt || "";
+    if (!prompt) prompt = await queueTaskForCodex(task);
+    if (prompt) await navigator.clipboard.writeText(prompt);
+  }
+
+  async function cancelCodexRun(runId: string) {
+    await fetch(`/api/codex/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" });
+    setCodexBridge(await loadCodexRuns());
   }
 
   async function acceptInbox(item: InboxItem, assignee: Task["assignee"] = "Me") {
@@ -496,12 +572,17 @@ function App() {
           task={selectedTask}
           project={appState.projects.find((project) => project.id === selectedTask.projectId)}
           milestones={appState.milestones.filter((milestone) => milestone.projectId === selectedTask.projectId)}
+          bridgeItem={codexBridge.queue.find((item) => item.taskId === selectedTask.id)}
+          bridgeRun={codexBridge.runs.find((item) => item.taskId === selectedTask.id)}
           activity={appState.activity.filter(
             (activity) => activity.taskId === selectedTask.id || activity.linkedCardId === selectedTask.id,
           )}
           onClose={() => setSelectedTaskId(null)}
           onUpdate={(patch) => updateTask(selectedTask.id, patch)}
           onAssignCodex={() => assignTaskToCodex(selectedTask)}
+          onQueueCodex={() => queueTaskForCodex(selectedTask)}
+          onLaunchCodex={() => launchTaskInCodex(selectedTask)}
+          onCopyPrompt={() => copyCodexPrompt(selectedTask)}
           onCreateGithubIssue={() => createGithubIssueForTask(selectedTask)}
           onResolve={async () => {
             const response = await fetch("/api/codex/resolve-issue", {
@@ -590,7 +671,20 @@ function App() {
     }
 
     if (view === "codex") {
-      return <CodexView state={appState} tasks={visibleTasks} selectedProjectId={selectedProjectId} onOpenTask={setSelectedTaskId} />;
+      return (
+        <CodexView
+          state={appState}
+          tasks={visibleTasks}
+          bridge={codexBridge}
+          selectedProjectId={selectedProjectId}
+          onOpenTask={setSelectedTaskId}
+          onCancelRun={cancelCodexRun}
+          onLaunchTask={(taskId) => {
+            const task = appState.tasks.find((item) => item.id === taskId);
+            if (task) launchTaskInCodex(task);
+          }}
+        />
+      );
     }
 
     if (view === "launch") {
@@ -1095,23 +1189,31 @@ function SavedViewsView({ tasks, projects, onOpenTask }: { tasks: Task[]; projec
 function CodexView({
   state,
   tasks,
+  bridge,
   selectedProjectId,
   onOpenTask,
+  onCancelRun,
+  onLaunchTask,
 }: {
   state: AppState;
   tasks: Task[];
+  bridge: CodexBridgeState;
   selectedProjectId: string;
   onOpenTask: (id: string) => void;
+  onCancelRun: (runId: string) => void;
+  onLaunchTask: (taskId: string) => void;
 }) {
   const codexTasks = tasks.filter((task) => task.assignee === "Codex" || task.source === "Codex");
+  const queueItems = bridge.queue.filter((item) => selectedProjectId === "all" || item.projectId === selectedProjectId);
   const logEntries = (state.codexProgress?.entries || []).filter(
     (entry) => selectedProjectId === "all" || entry.projectId === selectedProjectId,
   );
-  const lanes: Array<{ label: string; tasks: Task[] }> = [
-    { label: "Queued", tasks: codexTasks.filter((task) => task.status === "Next") },
-    { label: "Working", tasks: codexTasks.filter((task) => task.status === "In progress") },
-    { label: "Needs Review", tasks: codexTasks.filter((task) => task.status === "Needs Review") },
-    { label: "Done", tasks: codexTasks.filter((task) => task.status === "Done") },
+  const lanes: Array<{ label: string; tasks: Task[]; queue: CodexQueueItem[] }> = [
+    { label: "Queued", tasks: codexTasks.filter((task) => task.status === "Next"), queue: queueItems.filter((item) => item.status === "Queued") },
+    { label: "Working", tasks: codexTasks.filter((task) => task.status === "In progress"), queue: queueItems.filter((item) => item.status === "Working") },
+    { label: "Needs Review", tasks: codexTasks.filter((task) => task.status === "Needs Review"), queue: queueItems.filter((item) => item.status === "Needs Review") },
+    { label: "Blocked", tasks: codexTasks.filter((task) => task.status === "Blocked"), queue: queueItems.filter((item) => item.status === "Blocked") },
+    { label: "Done", tasks: codexTasks.filter((task) => task.status === "Done"), queue: queueItems.filter((item) => item.status === "Done") },
   ];
   return (
     <div className="split-content">
@@ -1130,8 +1232,13 @@ function CodexView({
                 <strong>{lane.label}</strong>
                 <Chip>{lane.tasks.length}</Chip>
               </div>
-              <CompactTaskPreview tasks={lane.tasks.slice(0, 6)} onOpen={onOpenTask} />
-              {!lane.tasks.length ? <div className="mini-empty">Nothing here.</div> : null}
+              <div className="codex-run-list">
+                {lane.queue.map((item) => (
+                  <CodexQueueCard key={item.id} item={item} onOpenTask={onOpenTask} onLaunchTask={onLaunchTask} onCancelRun={onCancelRun} />
+                ))}
+              </div>
+              <CompactTaskPreview tasks={lane.tasks.filter((task) => !lane.queue.some((item) => item.taskId === task.id)).slice(0, 6)} onOpen={onOpenTask} />
+              {!lane.tasks.length && !lane.queue.length ? <div className="mini-empty">Nothing here.</div> : null}
             </div>
           ))}
         </div>
@@ -1152,6 +1259,41 @@ function CodexView({
         </div>
       </section>
     </div>
+  );
+}
+
+function CodexQueueCard({
+  item,
+  onOpenTask,
+  onLaunchTask,
+  onCancelRun,
+}: {
+  item: CodexQueueItem;
+  onOpenTask: (id: string) => void;
+  onLaunchTask: (taskId: string) => void;
+  onCancelRun: (runId: string) => void;
+}) {
+  return (
+    <article className="codex-queue-card">
+      <div className="card-head">
+        <button className="ghost inline-link" type="button" onClick={() => onOpenTask(item.taskId)}>
+          {item.title}
+        </button>
+        <Chip tone={item.status === "Blocked" ? "red" : item.status === "Needs Review" ? "amber" : "blue"}>{item.status}</Chip>
+      </div>
+      <p>{item.lastMessage || item.outcome}</p>
+      {item.changedFiles?.length ? <small>{item.changedFiles.length} changed files</small> : <small>No changed files yet.</small>}
+      {item.status === "Queued" || item.status === "Blocked" ? (
+        <button className="secondary" type="button" onClick={() => onLaunchTask(item.taskId)}>
+          Start Codex
+        </button>
+      ) : null}
+      {item.runId && item.status === "Working" ? (
+        <button className="ghost" type="button" onClick={() => onCancelRun(item.runId!)}>
+          Cancel
+        </button>
+      ) : null}
+    </article>
   );
 }
 
@@ -1246,20 +1388,30 @@ function TaskDrawer({
   task,
   project,
   milestones,
+  bridgeItem,
+  bridgeRun,
   activity,
   onClose,
   onUpdate,
   onAssignCodex,
+  onQueueCodex,
+  onLaunchCodex,
+  onCopyPrompt,
   onCreateGithubIssue,
   onResolve,
 }: {
   task: Task;
   project?: Project;
   milestones: Milestone[];
+  bridgeItem?: CodexQueueItem;
+  bridgeRun?: CodexRun;
   activity: ActivityItem[];
   onClose: () => void;
   onUpdate: (patch: Partial<Task>) => void;
   onAssignCodex: () => void;
+  onQueueCodex: () => void;
+  onLaunchCodex: () => void;
+  onCopyPrompt: () => void;
   onCreateGithubIssue: () => void;
   onResolve: () => void;
 }) {
@@ -1299,6 +1451,15 @@ function TaskDrawer({
             Send to Codex
           </button>
         ) : null}
+        <button className="secondary" type="button" onClick={onQueueCodex}>
+          Queue for Codex
+        </button>
+        <button className="primary" type="button" onClick={onLaunchCodex}>
+          Start Codex
+        </button>
+        <button className="ghost" type="button" onClick={onCopyPrompt}>
+          Copy Prompt
+        </button>
         {!githubIssue && project?.github?.repo ? (
           <button className="secondary" type="button" onClick={onCreateGithubIssue}>
             Create GitHub Issue
@@ -1310,7 +1471,19 @@ function TaskDrawer({
         <Chip tone={sourceTone(task.source)}>{task.source}</Chip>
         <Chip tone={priorityTone(task.priority)}>{task.priority}</Chip>
         <Chip>{project?.name || "Project"}</Chip>
+        {bridgeItem ? <Chip tone={bridgeItem.status === "Blocked" ? "red" : "cyan"}>{bridgeItem.status}</Chip> : null}
       </div>
+
+      {bridgeItem || bridgeRun ? (
+        <section className="drawer-block">
+          <h3>Codex run</h3>
+          <div className="codex-run-box">
+            <span>{bridgeItem?.lastMessage || bridgeRun?.lastMessage || "Codex is queued for this task."}</span>
+            {bridgeRun?.pid ? <small>Terminal PID: {bridgeRun.pid}</small> : null}
+            {bridgeItem?.changedFiles?.length ? <small>{bridgeItem.changedFiles.join(", ")}</small> : <small>No changed files detected yet.</small>}
+          </div>
+        </section>
+      ) : null}
 
       {milestones.length ? (
         <label className="field">
@@ -1430,6 +1603,12 @@ async function loadState() {
   const response = await fetch("/api/state");
   if (!response.ok) throw new Error("Could not load state");
   return (await response.json()) as AppState;
+}
+
+async function loadCodexRuns() {
+  const response = await fetch("/api/codex/runs");
+  if (!response.ok) return { queue: [], runs: [] };
+  return (await response.json()) as CodexBridgeState;
 }
 
 function activeSprintForProject(state: AppState, projectId: string) {
